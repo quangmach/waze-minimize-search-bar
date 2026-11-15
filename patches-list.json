@@ -1,0 +1,33 @@
+{
+  "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
+  "version": "1.0.1",
+  "patches": [
+    {
+      "name": "Waze Minimize Search Bar",
+      "description": "Reduce the collapsed search sheet to a 24 dp handle; swipe up to expand it.",
+      "default": true,
+      "category": null,
+      "compatiblePackages": [
+        {
+          "packageName": "com.chisadin.wazemod",
+          "name": "Waze Mod",
+          "description": null,
+          "apkFileType": "APK",
+          "appIconColor": "#33CCFF",
+          "signatures": null,
+          "formFactor": "MOBILE",
+          "targets": [
+            {
+              "version": "5.24.5.0",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": null,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    }
+  ]
+}
