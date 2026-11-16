@@ -2,45 +2,58 @@ package app.template.patches.waze
 
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.ApkFileType
 import app.morphe.patcher.patch.AppTarget
 import app.morphe.patcher.patch.Compatibility
 import app.morphe.patcher.patch.patch
-import com.android.tools.smali.dexlib2.iface.instruction.NarrowLiteralInstruction
+import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
-private object SearchSheetHeightFingerprint : Fingerprint(
-    definingClass = "Lcom/waze/bw/c/d/cv;",
-    name = "a",
-    parameters = listOf("Z"),
-    returnType = "F",
-)
+private const val HELPER = "Lapp/template/extension/extension/SearchSheet;"
+private object TouchFlow : Fingerprint(definingClass = "Lcom/waze/main_screen/s/u;", name = "invokeSuspend")
+private object MapAction : Fingerprint(definingClass = "Lcom/waze/main_screen/s/r;", name = "invokeSuspend")
+private object Collector : Fingerprint(definingClass = "Lcom/waze/main_screen/s/t;", name = "<init>", parameters = listOf("Ljava/lang/Object;", "Ljava/lang/Object;", "I"))
+private object Activity : Fingerprint(definingClass = "Lcom/waze/FreeMapAppActivity;", name = "onCreate", parameters = listOf("Landroid/os/Bundle;"))
 
 @Suppress("unused")
 val compactSearchSheetPatch = patch(
     name = "Waze Minimize Search Bar",
-    description = "Reduce the collapsed search sheet to a 24 dp handle; swipe up to expand it.",
+    description = "Tap the map to hide or reveal the search bar; hide it after 10 seconds of inactivity.",
     default = true,
 ) {
     compatibleWith(Compatibility(
-        name = "Waze Mod",
-        packageName = "com.chisadin.wazemod",
-        apkFileType = ApkFileType.APK,
-        appIconColor = 0x33CCFF,
-        targets = listOf(AppTarget(version = "5.24.5.0")),
+        name = "Waze Mod", packageName = "com.chisadin.wazemod", apkFileType = ApkFileType.APK,
+        appIconColor = 0x33CCFF, targets = listOf(AppTarget(version = "5.24.5.0")),
     ))
-
+    extendWith("extensions/extension.mpe")
     execute {
-        val method = SearchSheetHeightFingerprint.method
-        val literals = method.implementation!!.instructions
-            .mapNotNull { (it as? NarrowLiteralInstruction)?.narrowLiteral }
-        check(0x42a00000 in literals && 0x42dc0000 in literals) {
-            "Unexpected search-sheet height calculation; this APK build is not supported"
-        }
-        // Used by the portrait and landscape start-sheet anchor updates.
-        // Waze's separate navigation-bar inset and expanded anchors remain intact.
-        method.addInstructions(0, """
-            const/high16 p0, 0x41c00000
-            return p0
-        """.trimIndent())
+        fun indices(method: app.morphe.patcher.util.proxy.mutableTypes.MutableMethod, owner: String, name: String) =
+            method.implementation!!.instructions.withIndex().filter { (_, insn) ->
+                val ref = (insn as? ReferenceInstruction)?.reference as? MethodReference
+                ref?.definingClass == owner && ref.name == name
+            }.map { it.index }
+
+        val flow = TouchFlow.method
+        val flowCalls = indices(flow, "Lcom/waze/ui/o/d;", "h")
+        check(flowCalls.size == 1)
+        flow.replaceInstruction(flowCalls.single(), "invoke-virtual {v2}, Lcom/waze/ui/o/d;->g()Lkotlinx/coroutines/b/j;")
+
+        val action = MapAction.method
+        val actions = indices(action, "Lcom/waze/main_screen/ab;", "i")
+        check(actions.size == 2)
+        // First call is the map-touch coroutine; the other call retains normal behavior.
+        action.replaceInstruction(actions.first(), "invoke-static {p1, v2}, $HELPER->toggle(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+
+        val collector = Collector.method
+        val returns = collector.implementation!!.instructions.withIndex().filter { it.value.opcode == Opcode.RETURN_VOID }
+        check(returns.size == 1)
+        collector.addInstructions(returns.single().index, "invoke-static {p0}, $HELPER->register(Ljava/lang/Object;)V")
+
+        val activity = Activity.method
+        val onCreate = indices(activity, "Lcom/waze/bv;", "onCreate")
+        check(onCreate.size == 1)
+        activity.addInstructions(onCreate.single() + 1, "invoke-static {p0}, $HELPER->install(Landroid/app/Activity;)V")
     }
 }

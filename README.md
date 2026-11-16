@@ -1,6 +1,6 @@
 # Waze Minimize Search Bar
 
-A Morphe patch for Waze Mod that reduces the collapsed search sheet to a small handle. Swipe up to expand the sheet and use search.
+A Morphe patch for Waze Mod that hides the search sheet when you tap the map, and brings it back when you tap the map again. The original sheet height is retained; swipe up to use search. The sheet also hides after 10 seconds without interaction.
 
 ## Add to Morphe
 
@@ -10,7 +10,7 @@ In Morphe Manager, open **Sources**, add a source, and enter:
 
 Select the **Waze Minimize Search Bar** patch when patching Waze Mod. The patch targets package `com.chisadin.wazemod`, version `5.24.5.0` (version code `1030732`). It does not target the official Waze package.
 
-The bundle was applied to the target APK and its resulting bytecode was inspected. The appearance and touch behavior have not yet been tested on a phone. Re-signing with a different key may require uninstalling an existing installation and can remove its data.
+The bundle was applied to the target APK and its resulting bytecode was inspected. The tap, timeout and touch behavior have not yet been tested on a phone. Re-signing with a different key may require uninstalling an existing installation and can remove its data.
 
 The repository contains patch source only; it does not distribute Waze or its APK.
 
