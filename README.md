@@ -1,6 +1,8 @@
-# Waze Minimize Search Bar
+# QM Patches
 
 A Morphe patch for Waze Mod that hides the search sheet when you tap the map, and brings it back when you tap the map again. The original sheet height is retained; swipe up to use search. The sheet also hides after 10 seconds without interaction.
+
+**Move & Resize Speedometer** is an experimental, optional patch. Long-press the speedometer, keep holding, and drag it. While holding, add a second finger and pinch to resize. Position and size are saved. This targets Waze's named speedometer view rather than an obfuscated version-specific class; Waze updates may still change that view or its layout.
 
 ## Add to Morphe
 
@@ -11,6 +13,8 @@ In Morphe Manager, open **Sources**, add a source, and enter:
 Select the **Waze Minimize Search Bar** patch. Supported builds are Waze Mod `com.chisadin.wazemod` 5.24.5.0 and original Waze `com.waze` 5.24.5.0 and 5.27.5.0. Original Waze support is experimental. Other versions may require a new profile.
 
 The bundle was applied to all three target APKs and its resulting bytecode was inspected. The tap, timeout and touch behavior have not yet been tested on a phone. Re-signing with a different key may require uninstalling an existing installation and can remove its data.
+
+The speedometer patch applied successfully to original Waze 5.24.5.0 and 5.27.5.0 and Waze Mod 5.24.5.0, but its gestures have not yet been tested on a device. It is listed as experimental for Waze and Waze Mod versions and is disabled by default; enable experimental app versions and select it in Morphe.
 
 The repository contains patch source only; it does not distribute Waze or its APK.
 

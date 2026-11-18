@@ -3,8 +3,8 @@ group = "local.waze"
 patches {
     // TODO: Update this section with your project details.
     about {
-        name = "Waze Minimize Search Bar"
-        description = "Minimize the Waze Mod search bar"
+        name = "QM Patches"
+        description = "Patches for Waze"
         source = "https://github.com/quangmach/waze-minimize-search-bar"
         author = "quangmach"
         contact = "na"

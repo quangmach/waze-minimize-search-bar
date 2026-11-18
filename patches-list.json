@@ -3,6 +3,51 @@
   "version": "1.2.0",
   "patches": [
     {
+      "name": "Move & Resize Speedometer",
+      "description": "Long-press and drag the speedometer; pinch to resize it.",
+      "default": false,
+      "category": null,
+      "compatiblePackages": [
+        {
+          "packageName": "com.waze",
+          "name": "Waze",
+          "description": null,
+          "apkFileType": "APK",
+          "appIconColor": "#33CCFF",
+          "signatures": null,
+          "formFactor": "MOBILE",
+          "targets": [
+            {
+              "version": null,
+              "versionCodes": null,
+              "isExperimental": true,
+              "minSdk": null,
+              "description": null
+            }
+          ]
+        },
+        {
+          "packageName": "com.chisadin.wazemod",
+          "name": "Waze Mod",
+          "description": null,
+          "apkFileType": "APK",
+          "appIconColor": "#33CCFF",
+          "signatures": null,
+          "formFactor": "MOBILE",
+          "targets": [
+            {
+              "version": null,
+              "versionCodes": null,
+              "isExperimental": true,
+              "minSdk": null,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Waze Minimize Search Bar",
       "description": "Tap the map to hide or reveal the search bar; hide it after 10 seconds of inactivity.",
       "default": true,
