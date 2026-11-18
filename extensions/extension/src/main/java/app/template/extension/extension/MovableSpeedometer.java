@@ -36,6 +36,7 @@ public final class MovableSpeedometer {
             android.util.Log.i("QM-Speedometer", "Installed on map activity");
             View decor = window.getDecorView();
             decor.getViewTreeObserver().addOnGlobalLayoutListener(controls::findTarget);
+            decor.getViewTreeObserver().addOnPreDrawListener(controls::stabilizePosition);
             controls.findTarget();
         } catch (RuntimeException error) {
             android.util.Log.w("QM-Speedometer", "Could not install speedometer controls", error);
@@ -48,9 +49,10 @@ public final class MovableSpeedometer {
         final Handler handler = new Handler(Looper.getMainLooper());
         final SharedPreferences prefs;
         View target;
-        boolean armed, editing, moved;
+        boolean armed, capturing, editing, moved, anchored;
+        float anchorX, anchorY;
         float startX, startY, lastX, lastY, lastSpan;
-        final Runnable activate = () -> { if (armed) { editing = true; cancelWazeTouch(); } };
+        final Runnable activate = () -> { if (armed) editing = true; };
 
         Controls(Activity activity, Window.Callback delegate) {
             this.activity = activity; this.delegate = delegate;
@@ -77,13 +79,38 @@ public final class MovableSpeedometer {
                 target.setTranslationY(prefs.getFloat("y", 0f) * density);
                 float scale = prefs.getFloat("scale", 1f);
                 target.setScaleX(scale); target.setScaleY(scale);
+                anchored = prefs.contains("anchor_x") && prefs.contains("anchor_y");
+                if (anchored) {
+                    anchorX = prefs.getFloat("anchor_x", 0f);
+                    anchorY = prefs.getFloat("anchor_y", 0f);
+                } else if (prefs.contains("x") || prefs.contains("y")) {
+                    // Migrate positions saved by earlier versions after layout completes.
+                    rememberPosition();
+                }
             });
         }
 
-        void cancelWazeTouch() {
-            long now = android.os.SystemClock.uptimeMillis();
-            MotionEvent cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0, 0, 0);
-            try { delegate.dispatchTouchEvent(cancel); } finally { cancel.recycle(); }
+        void rememberPosition() {
+            View decor = activity.getWindow().getDecorView();
+            if (target == null || decor.getWidth() <= 0 || decor.getHeight() <= 0) return;
+            int[] pos = new int[2];
+            target.getLocationOnScreen(pos);
+            anchorX = (float) pos[0] / decor.getWidth();
+            anchorY = (float) pos[1] / decor.getHeight();
+            anchored = true;
+        }
+
+        boolean stabilizePosition() {
+            if (!anchored || editing || target == null || !target.isAttachedToWindow()) return true;
+            View decor = activity.getWindow().getDecorView();
+            if (decor.getWidth() <= 0 || decor.getHeight() <= 0) return true;
+            int[] pos = new int[2];
+            target.getLocationOnScreen(pos);
+            float dx = anchorX * decor.getWidth() - pos[0];
+            float dy = anchorY * decor.getHeight() - pos[1];
+            if (Math.abs(dx) >= 1f) target.setTranslationX(target.getTranslationX() + dx);
+            if (Math.abs(dy) >= 1f) target.setTranslationY(target.getTranslationY() + dy);
+            return true;
         }
 
         boolean inside(MotionEvent event) {
@@ -97,19 +124,19 @@ public final class MovableSpeedometer {
         boolean touch(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    armed = inside(event); editing = false; moved = false; lastSpan = 0;
+                    armed = inside(event); capturing = armed; editing = false; moved = false; lastSpan = 0;
                     startX = lastX = event.getRawX(); startY = lastY = event.getRawY();
                     if (armed) handler.postDelayed(activate, ViewConfiguration.getLongPressTimeout());
-                    return false;
+                    return capturing;
                 case MotionEvent.ACTION_POINTER_DOWN:
                     if (editing && event.getPointerCount() >= 2) lastSpan = span(event);
-                    return editing;
+                    return capturing;
                 case MotionEvent.ACTION_MOVE:
                     if (!editing) {
                         float dx = event.getRawX() - startX, dy = event.getRawY() - startY;
                         int slop = ViewConfiguration.get(activity).getScaledTouchSlop();
                         if (dx * dx + dy * dy > slop * slop) { armed = false; handler.removeCallbacks(activate); }
-                        return false;
+                        return capturing;
                     }
                     if (event.getPointerCount() >= 2) {
                         float span = span(event);
@@ -126,17 +153,18 @@ public final class MovableSpeedometer {
                     lastX = event.getRawX(); lastY = event.getRawY();
                     return true;
                 case MotionEvent.ACTION_POINTER_UP:
-                    lastSpan = 0; lastX = event.getRawX(); lastY = event.getRawY(); return editing;
+                    lastSpan = 0; lastX = event.getRawX(); lastY = event.getRawY(); return capturing;
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
                     handler.removeCallbacks(activate); armed = false;
-                    boolean consumed = editing;
+                    boolean consumed = capturing;
                     if (editing && moved) {
                         float density = target.getResources().getDisplayMetrics().density;
-                        prefs.edit().putFloat("x", target.getTranslationX() / density).putFloat("y", target.getTranslationY() / density).putFloat("scale", target.getScaleX()).apply();
+                        rememberPosition();
+                        prefs.edit().putFloat("x", target.getTranslationX() / density).putFloat("y", target.getTranslationY() / density).putFloat("scale", target.getScaleX()).putFloat("anchor_x", anchorX).putFloat("anchor_y", anchorY).apply();
                     }
-                    editing = false; return consumed;
-                default: return editing;
+                    editing = false; capturing = false; return consumed;
+                default: return capturing;
             }
         }
 
