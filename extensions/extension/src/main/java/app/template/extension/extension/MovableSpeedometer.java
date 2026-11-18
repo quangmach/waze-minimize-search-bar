@@ -2,7 +2,6 @@ package app.template.extension.extension;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
@@ -20,54 +19,27 @@ public final class MovableSpeedometer {
     private static final String PREFS = "morphe_speedometer_position";
     private MovableSpeedometer() {}
 
-    public static void register(View coloredView) {
-        coloredView.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
-            @Override public void onViewDetachedFromWindow(View view) {}
-            @Override public void onViewAttachedToWindow(View view) {
-                view.post(() -> attach(view));
-            }
-        });
+    public static void install(Activity activity) {
+        activity.getWindow().getDecorView().post(() -> attach(activity));
     }
 
-    private static void attach(View coloredView) {
+    private static void attach(Activity activity) {
         try {
-            Activity activity = activityOf(coloredView.getContext());
-            if (activity == null) return;
-            int id = coloredView.getResources().getIdentifier("Speedometer", "id", activity.getPackageName());
-            if (id == 0) return;
-            View target = coloredView;
-            while (target != null && target.getId() != id) {
-                ViewParent parent = target.getParent();
-                target = parent instanceof View ? (View) parent : null;
-            }
-            if (target == null) return;
-            for (ViewParent parent = target.getParent(); parent instanceof ViewGroup; parent = parent.getParent()) {
-                ((ViewGroup) parent).setClipChildren(false);
-                ((ViewGroup) parent).setClipToPadding(false);
-            }
             Window window = activity.getWindow();
             Window.Callback callback = window.getCallback();
             if (Proxy.isProxyClass(callback.getClass()) && Proxy.getInvocationHandler(callback) instanceof Controls) {
-                ((Controls) Proxy.getInvocationHandler(callback)).target = target;
-                ((Controls) Proxy.getInvocationHandler(callback)).restore();
+                ((Controls) Proxy.getInvocationHandler(callback)).findTarget();
                 return;
             }
-            Controls controls = new Controls(activity, callback, target);
+            Controls controls = new Controls(activity, callback);
             window.setCallback((Window.Callback) Proxy.newProxyInstance(Window.Callback.class.getClassLoader(), new Class<?>[]{Window.Callback.class}, controls));
-            controls.restore();
-        } catch (RuntimeException ignored) {
-            // Keep Waze usable if an unsupported version changes its view hierarchy.
+            android.util.Log.i("QM-Speedometer", "Installed on map activity");
+            View decor = window.getDecorView();
+            decor.getViewTreeObserver().addOnGlobalLayoutListener(controls::findTarget);
+            controls.findTarget();
+        } catch (RuntimeException error) {
+            android.util.Log.w("QM-Speedometer", "Could not install speedometer controls", error);
         }
-    }
-
-    private static Activity activityOf(Context context) {
-        while (context instanceof ContextWrapper) {
-            if (context instanceof Activity) return (Activity) context;
-            Context next = ((ContextWrapper) context).getBaseContext();
-            if (next == context) break;
-            context = next;
-        }
-        return null;
     }
 
     private static final class Controls implements java.lang.reflect.InvocationHandler {
@@ -80,9 +52,22 @@ public final class MovableSpeedometer {
         float startX, startY, lastX, lastY, lastSpan;
         final Runnable activate = () -> { if (armed) { editing = true; cancelWazeTouch(); } };
 
-        Controls(Activity activity, Window.Callback delegate, View target) {
-            this.activity = activity; this.delegate = delegate; this.target = target;
+        Controls(Activity activity, Window.Callback delegate) {
+            this.activity = activity; this.delegate = delegate;
             prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        }
+
+        void findTarget() {
+            int id = activity.getResources().getIdentifier("Speedometer", "id", activity.getPackageName());
+            View found = id == 0 ? null : activity.findViewById(id);
+            if (found == null || found == target) return;
+            target = found;
+            android.util.Log.i("QM-Speedometer", "Found speedometer view");
+            for (ViewParent parent = target.getParent(); parent instanceof ViewGroup; parent = parent.getParent()) {
+                ((ViewGroup) parent).setClipChildren(false);
+                ((ViewGroup) parent).setClipToPadding(false);
+            }
+            restore();
         }
 
         void restore() {
@@ -102,6 +87,7 @@ public final class MovableSpeedometer {
         }
 
         boolean inside(MotionEvent event) {
+            findTarget();
             if (target == null || !target.isShown()) return false;
             int[] pos = new int[2]; target.getLocationOnScreen(pos);
             float x = event.getRawX(), y = event.getRawY();

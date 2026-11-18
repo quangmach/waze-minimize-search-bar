@@ -13,6 +13,9 @@ private object SpeedometerView : Fingerprint(
     name = "<init>",
     parameters = listOf("Landroid/content/Context;", "Landroid/util/AttributeSet;"),
 )
+private object MainActivityResume : Fingerprint(
+    definingClass = "Lcom/waze/MainActivity;", name = "onResume", parameters = emptyList(),
+)
 
 @Suppress("unused")
 val movableSpeedometerPatch = patch(
@@ -26,9 +29,14 @@ val movableSpeedometerPatch = patch(
     )
     extendWith("extensions/extension.mpe")
     execute {
-        val method = SpeedometerView.method
+        // Check the named widget exists, then install on the map activity itself.
+        // The widget can be constructed with an application context, which has no window.
+        SpeedometerView.method
+        val method = MainActivityResume.method
         val returns = method.implementation!!.instructions.withIndex().filter { it.value.opcode == Opcode.RETURN_VOID }
-        check(returns.size == 1) { "Speedometer constructor changed; refusing to patch." }
-        method.addInstructions(returns.single().index, "invoke-static {p0}, Lapp/template/extension/extension/MovableSpeedometer;->register(Landroid/view/View;)V")
+        check(returns.isNotEmpty()) { "Main activity lifecycle changed; refusing to patch." }
+        for (index in returns.map { it.index }.asReversed()) {
+            method.addInstructions(index, "invoke-static {p0}, Lapp/template/extension/extension/MovableSpeedometer;->install(Landroid/app/Activity;)V")
+        }
     }
 }
