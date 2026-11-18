@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-11-16T02:15:00",
+  "created_at": "2026-11-18T10:18:45",
   "description": "Tap the map to toggle the search bar; automatically hide after 10 seconds",
-  "download_url": "https://github.com/quangmach/waze-minimize-search-bar/releases/download/v1.1.0/patches-1.1.0.mpp",
+  "download_url": "https://github.com/quangmach/waze-minimize-search-bar/releases/download/v1.2.0/patches-1.2.0.mpp",
   "signature_download_url": "",
-  "version": "1.1.0"
+  "version": "1.2.0"
 }
