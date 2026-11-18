@@ -8,9 +8,9 @@ In Morphe Manager, open **Sources**, add a source, and enter:
 
 `https://github.com/quangmach/waze-minimize-search-bar`
 
-Select the **Waze Minimize Search Bar** patch when patching Waze Mod. The patch targets package `com.chisadin.wazemod`, version `5.24.5.0` (version code `1030732`). It does not target the official Waze package.
+Select the **Waze Minimize Search Bar** patch. Supported builds are Waze Mod `com.chisadin.wazemod` 5.24.5.0 and original Waze `com.waze` 5.24.5.0 and 5.27.5.0. Original Waze support is experimental. Other versions may require a new profile.
 
-The bundle was applied to the target APK and its resulting bytecode was inspected. The tap, timeout and touch behavior have not yet been tested on a phone. Re-signing with a different key may require uninstalling an existing installation and can remove its data.
+The bundle was applied to all three target APKs and its resulting bytecode was inspected. The tap, timeout and touch behavior have not yet been tested on a phone. Re-signing with a different key may require uninstalling an existing installation and can remove its data.
 
 The repository contains patch source only; it does not distribute Waze or its APK.
 

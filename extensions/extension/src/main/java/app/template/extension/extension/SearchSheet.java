@@ -24,12 +24,12 @@ public final class SearchSheet {
             Object state = sheet(item);
             Object settled = state.getClass().getMethod("h").invoke(state);
             if (!(settled instanceof Enum) || "Hidden".equals(((Enum<?>) settled).name())) return;
-            Class<?> click = Class.forName("com.waze.map.b.t");
-            Object event = click.getField("a").get(null);
-            Class<?> continuation = Class.forName("h.c.e");
-            Method emit = item.getClass().getDeclaredMethod("emit", Object.class, continuation);
+            Method emit = null;
+            for (Method m : item.getClass().getDeclaredMethods())
+                if (m.getName().equals("emit") && m.getParameterCount() == 2) { emit = m; break; }
+            if (emit == null) throw new NoSuchMethodException("emit");
             emit.setAccessible(true);
-            emit.invoke(item, event, null);
+            emit.invoke(item, null, null);
         } catch (Throwable e) { Log.w("WazeSearchPatch", "Auto-hide failed", e); }
     };
 
@@ -49,7 +49,9 @@ public final class SearchSheet {
     }
     public static void register(Object item) {
         try {
-            if (((Integer) field(item, "c")) != 1) return;
+            Object id;
+            try { id = field(item, "$cid"); } catch (NoSuchFieldException ignored) { id = field(item, "c"); }
+            if (((Integer) id) != 1) return;
             collector = new WeakReference<>(item);
             schedule();
         } catch (Throwable e) { Log.w("WazeSearchPatch", "Registration failed", e); }
@@ -59,8 +61,11 @@ public final class SearchSheet {
             Object state = holder.getClass().getMethod("c").invoke(holder);
             Object current = state.getClass().getMethod("i").invoke(state);
             boolean hidden = current instanceof Enum && "Hidden".equals(((Enum<?>) current).name());
-            Class<?> cont = Class.forName("h.c.e");
-            Object result = state.getClass().getMethod(hidden ? "o" : "m", cont).invoke(state, continuation);
+            Method transition = null;
+            for (Method m : state.getClass().getMethods())
+                if (m.getName().equals(hidden ? "o" : "m") && m.getParameterCount() == 1 && m.getParameterTypes()[0].isInstance(continuation)) { transition = m; break; }
+            if (transition == null) throw new NoSuchMethodException("sheet transition");
+            Object result = transition.invoke(state, continuation);
             schedule();
             return result;
         } catch (InvocationTargetException e) { throw e.getCause(); }
