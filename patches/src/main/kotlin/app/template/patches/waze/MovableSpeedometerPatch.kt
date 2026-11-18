@@ -1,7 +1,7 @@
 package app.template.patches.waze
 
 import app.morphe.patcher.Fingerprint
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.util.addInstructionsAtControlFlowLabel
 import app.morphe.patcher.patch.ApkFileType
 import app.morphe.patcher.patch.AppTarget
 import app.morphe.patcher.patch.Compatibility
@@ -36,7 +36,7 @@ val movableSpeedometerPatch = patch(
         val returns = method.implementation!!.instructions.withIndex().filter { it.value.opcode == Opcode.RETURN_VOID }
         check(returns.isNotEmpty()) { "Main activity lifecycle changed; refusing to patch." }
         for (index in returns.map { it.index }.asReversed()) {
-            method.addInstructions(index, "invoke-static {p0}, Lapp/template/extension/extension/MovableSpeedometer;->install(Landroid/app/Activity;)V")
+            method.addInstructionsAtControlFlowLabel(index, "invoke-static {p0}, Lapp/template/extension/extension/MovableSpeedometer;->install(Landroid/app/Activity;)V")
         }
     }
 }
