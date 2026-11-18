@@ -1,12 +1,11 @@
 package app.template.patches.waze
 
 import app.morphe.patcher.Fingerprint
-import app.morphe.patcher.util.addInstructionsAtControlFlowLabel
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.ApkFileType
 import app.morphe.patcher.patch.AppTarget
 import app.morphe.patcher.patch.Compatibility
 import app.morphe.patcher.patch.patch
-import com.android.tools.smali.dexlib2.Opcode
 
 private object SpeedometerView : Fingerprint(
     definingClass = "Lcom/waze/view/map/SpeedometerColoredView;",
@@ -33,10 +32,7 @@ val movableSpeedometerPatch = patch(
         // The widget can be constructed with an application context, which has no window.
         SpeedometerView.method
         val method = MainActivityResume.method
-        val returns = method.implementation!!.instructions.withIndex().filter { it.value.opcode == Opcode.RETURN_VOID }
-        check(returns.isNotEmpty()) { "Main activity lifecycle changed; refusing to patch." }
-        for (index in returns.map { it.index }.asReversed()) {
-            method.addInstructionsAtControlFlowLabel(index, "invoke-static {p0}, Lapp/template/extension/extension/MovableSpeedometer;->install(Landroid/app/Activity;)V")
-        }
+        // At entry, p0 is guaranteed to be the Activity; Waze reuses that register later.
+        method.addInstructions(0, "invoke-static {p0}, Lapp/template/extension/extension/MovableSpeedometer;->install(Landroid/app/Activity;)V")
     }
 }
