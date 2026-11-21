@@ -5,6 +5,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.AppTarget
 import app.morphe.patcher.patch.Compatibility
+import app.morphe.patcher.patch.document
 import app.morphe.patcher.patch.patch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
@@ -14,11 +15,54 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.formats.Instruction35c
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.iface.reference.TypeReference
+import org.w3c.dom.Element
+import org.w3c.dom.Node
 
 private const val PHONE_MODEL = "Lcom/waze/es;"
 private const val FLOW = "Lkotlinx/coroutines/b/j;"
 private const val CONNECTION = "Lcom/b/b/a/u;"
 private const val EXTENSION = "Lapp/template/extension/extension/AndroidAutoPhoneMap;"
+private const val DESTINATION_ACTIVITY = "app.template.extension.extension.SharedDestinationActivity"
+private const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
+
+private object DestinationDisplayTracker : Fingerprint(
+    definingClass = "Lcom/waze/MainActivity;",
+    name = "onResume",
+    parameters = emptyList(),
+    returnType = "V",
+)
+
+private fun Node.elements(tag: String): List<Element> = (0 until childNodes.length)
+    .mapNotNull { childNodes.item(it) as? Element }
+    .filter { it.tagName == tag }
+
+private val sharedDestinationManifest = patch {
+    execute {
+        document("AndroidManifest.xml").use { manifest ->
+            val application = manifest.getElementsByTagName("application").item(0) as Element
+            val wazeEntry = application.elements("activity").single {
+                it.getAttributeNS(ANDROID_NAMESPACE, "name") == "com.waze.FreeMapAppActivity"
+            }
+            val destinationActions = setOf("VIEW", "SEND", "SEARCH", "NAVIGATE")
+                .map { "android.intent.action.$it" }.toSet()
+            val filters = wazeEntry.elements("intent-filter").filter { filter ->
+                val actions = filter.elements("action").map { it.getAttributeNS(ANDROID_NAMESPACE, "name") }
+                actions.isNotEmpty() && actions.all { it in destinationActions }
+            }
+            check(filters.isNotEmpty())
+
+            val activity = manifest.createElement("activity")
+            val packageName = manifest.documentElement.getAttribute("package")
+            activity.setAttributeNS(ANDROID_NAMESPACE, "android:name", DESTINATION_ACTIVITY)
+            activity.setAttributeNS(ANDROID_NAMESPACE, "android:exported", "true")
+            activity.setAttributeNS(ANDROID_NAMESPACE, "android:excludeFromRecents", "true")
+            activity.setAttributeNS(ANDROID_NAMESPACE, "android:taskAffinity", "$packageName.qmDestination")
+            activity.setAttributeNS(ANDROID_NAMESPACE, "android:theme", "@android:style/Theme.NoDisplay")
+            for (filter in filters) activity.appendChild(filter)
+            application.appendChild(activity)
+        }
+    }
+}
 
 private object PhoneViewModel : Fingerprint(
     definingClass = PHONE_MODEL,
@@ -119,9 +163,13 @@ val androidAutoPhoneMapPatch = patch(
         AppTarget(version = "5.27.5.0", isExperimental = true),
     )))
     extendWith("extensions/extension.mpe")
+    dependsOn(sharedDestinationManifest)
 
     execute {
         val session = CarSessionEvent.method
+        DestinationDisplayTracker.method.addInstructions(0, """
+            invoke-static {p0}, L${DESTINATION_ACTIVITY.replace('.', '/')};->trackDisplay(Landroid/app/Activity;)V
+        """)
         val viewModel = PhoneViewModel.method
         val connectionUpdate = CarConnectionUpdate.method
         val sharedText = SharedTextIntent.method
