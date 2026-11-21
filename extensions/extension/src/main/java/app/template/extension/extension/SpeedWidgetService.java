@@ -1,5 +1,6 @@
 package app.template.extension.extension;
 
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.Application;
 import android.app.NotificationChannel;
@@ -7,8 +8,10 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.appwidget.AppWidgetManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -17,9 +20,12 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
 
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -27,14 +33,29 @@ import java.util.concurrent.TimeUnit;
 public final class SpeedWidgetService extends Service implements LocationListener {
     private static final int NOTIFICATION_ID = 0x514D5701;
     private static final String CHANNEL = "qm_waze_speed_widget";
-    private static final String STOP = "app.template.extension.extension.STOP_SPEED_WIDGET";
+    static final String STOP = "app.template.extension.extension.STOP_SPEED_WIDGET";
     private static final String UNAVAILABLE = "—";
     private static final long MAX_FIX_AGE_MS = 6000;
+    private static final long ENGINE_IDLE_GRACE_MS = 3000;
     private static final float MAX_LIMIT_DISTANCE_METERS = 25;
     private static volatile Reading wazeReading;
     private static SpeedWidgetService running;
+    private static Application engineOwner;
+    private static final Handler engineHandler = new Handler(Looper.getMainLooper());
+    private static final Runnable releaseEngine = () -> {
+        Application owner = engineOwner;
+        if (running != null || owner == null) return;
+        if (hasWazeSession(owner) || owner.stopService(new Intent().setClassName(owner, "com.waze.WazeAppService"))) {
+            engineOwner = null;
+        }
+    };
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final BroadcastReceiver screen = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            stopManualTracking();
+        }
+    };
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
@@ -45,6 +66,8 @@ public final class SpeedWidgetService extends Service implements LocationListene
     private LocationManager locationManager;
     private Location gps;
     private String rendered;
+    private boolean manual;
+    private int manualWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
 
     private static final class Reading {
         final String unit;
@@ -65,8 +88,15 @@ public final class SpeedWidgetService extends Service implements LocationListene
         wazeReading = new Reading(normalizeUnit(units), limit, location);
     }
 
-    static boolean isRunning() {
+    static boolean hasManualTracking() {
         return running != null;
+    }
+
+    static void widgetDeleted(int id) {
+        SpeedWidgetService service = running;
+        if (service != null && service.manualWidgetId == id) {
+            service.stopManualTracking();
+        }
     }
 
     static void refresh(Context context) {
@@ -79,25 +109,48 @@ public final class SpeedWidgetService extends Service implements LocationListene
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && STOP.equals(intent.getAction())) {
-            stopSelf();
+        if (intent == null || STOP.equals(intent.getAction())) {
+            stopManualTracking();
             return START_NOT_STICKY;
         }
-        if (running == this) {
-            return START_STICKY;
-        }
+        int id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
 
         try {
             startForeground(NOTIFICATION_ID, notification());
-            if (AppWidgetManager.getInstance(this).getAppWidgetIds(SpeedWidget.component(this)).length == 0) {
-                stopSelf();
+            if (!SpeedWidget.isBound(this, id)) {
+                if (!manual) stopManualTracking();
                 return START_NOT_STICKY;
             }
-            locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+            if (!manual) {
+                IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+                if (Build.VERSION.SDK_INT >= 33) {
+                    registerReceiver(screen, filter, Context.RECEIVER_NOT_EXPORTED);
+                } else {
+                    registerReceiver(screen, filter);
+                }
+                manual = true;
+            }
+            manualWidgetId = id;
+            if (!getSystemService(PowerManager.class).isInteractive() || !beginTracking()) {
+                stopManualTracking();
+            }
+        } catch (IllegalArgumentException | SecurityException | IllegalStateException e) {
+            stopManualTracking();
+        }
+        return START_NOT_STICKY;
+    }
+
+    private boolean beginTracking() {
+        if (running == this) return true;
+        if (AppWidgetManager.getInstance(this).getAppWidgetIds(SpeedWidget.component(this)).length == 0) {
+            return false;
+        }
+        try {
+            locationManager = getSystemService(LocationManager.class);
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, Looper.getMainLooper());
         } catch (IllegalArgumentException | SecurityException | IllegalStateException e) {
-            stopSelf();
-            return START_NOT_STICKY;
+            refresh(this);
+            return false;
         }
 
         running = this;
@@ -107,24 +160,91 @@ public final class SpeedWidgetService extends Service implements LocationListene
         } catch (RuntimeException | LinkageError e) {
             Log.w("QmWazeSpeedWidget", "Waze could not start for road limits", e);
         }
-        return START_STICKY;
+        return true;
+    }
+
+    private void stopManualTracking() {
+        if (manual) {
+            manual = false;
+            manualWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
+            unregisterReceiver(screen);
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        endTracking();
+        stopSelf();
+    }
+
+    private void endTracking() {
+        if (running != this) return;
+        running = null;
+        handler.removeCallbacks(tick);
+        locationManager.removeUpdates(this);
+        gps = null;
+        rendered = null;
+        refresh(this);
+        scheduleEngineRelease();
     }
 
     // Morphe inserts the call to Waze's coroutine initializer here.
     private static void startWazeEngine(Application application) {}
 
-    private static Object newContinuation(Class<?> continuation, Object emptyContext) {
+    private static Object newContinuation(Class<?> continuation, Object emptyContext, Application owner) {
         return Proxy.newProxyInstance(continuation.getClassLoader(), new Class<?>[] { continuation },
-                (proxy, method, args) -> {
-                    switch (method.getName()) {
-                        case "getContext": return emptyContext;
-                        case "resumeWith": return null;
-                        case "toString": return "Waze speed widget initializer";
-                        case "hashCode": return System.identityHashCode(proxy);
-                        case "equals": return proxy == args[0];
-                        default: throw new UnsupportedOperationException(method.getName());
-                    }
-                });
+                new EngineRequest(emptyContext, owner));
+    }
+
+    private static final class EngineRequest implements InvocationHandler {
+        final Object emptyContext;
+        final Application owner;
+
+        EngineRequest(Object emptyContext, Application owner) {
+            this.emptyContext = emptyContext;
+            this.owner = owner;
+        }
+
+        @Override public Object invoke(Object proxy, Method method, Object[] args) {
+            switch (method.getName()) {
+                case "getContext": return emptyContext;
+                case "resumeWith":
+                    engineHandler.post(SpeedWidgetService::scheduleEngineRelease);
+                    return null;
+                case "toString": return "Waze speed widget initializer";
+                case "hashCode": return System.identityHashCode(proxy);
+                case "equals": return proxy == args[0];
+                default: throw new UnsupportedOperationException(method.getName());
+            }
+        }
+    }
+
+    // Called only when a continuation wins Waze's existing atomic startup gate.
+    public static void onWazeEngineInitializing(Object continuation) {
+        if (continuation != null && Proxy.isProxyClass(continuation.getClass())
+                && Proxy.getInvocationHandler(continuation) instanceof EngineRequest) {
+            engineOwner = ((EngineRequest) Proxy.getInvocationHandler(continuation)).owner;
+        }
+    }
+
+    private static void scheduleEngineRelease() {
+        if (engineOwner == null) return;
+        engineHandler.removeCallbacks(releaseEngine);
+        engineHandler.postDelayed(releaseEngine, ENGINE_IDLE_GRACE_MS);
+    }
+
+    private static boolean hasWazeSession(Context context) {
+        ActivityManager activities = context.getSystemService(ActivityManager.class);
+        for (ActivityManager.AppTask task : activities.getAppTasks()) {
+            ActivityManager.RecentTaskInfo info = task.getTaskInfo();
+            Intent root = info == null || !info.isRunning ? null : info.baseIntent;
+            if (root == null || root.getComponent() == null) continue;
+            String name = root.getComponent().getClassName();
+            if (name.equals("com.waze.MainActivity") || name.equals("com.waze.FreeMapAppActivity")) return true;
+        }
+        for (ActivityManager.RunningServiceInfo service : activities.getRunningServices(Integer.MAX_VALUE)) {
+            String name = service.service.getClassName();
+            if (name.equals("com.waze.car_lib.WazeCarAppService") || name.equals("com.waze.sdk.SdkService")
+                    || name.equals("com.waze.BoundService") || name.equals("com.waze.AIDLService")) return true;
+        }
+        return false;
     }
 
     private Notification notification() {
@@ -176,8 +296,7 @@ public final class SpeedWidgetService extends Service implements LocationListene
                 ? Integer.toString(Math.round(gps.getSpeed() * ("mph".equals(unit) ? 2.2369363f : 3.6f)))
                 : UNAVAILABLE;
         String limit = currentLimit ? Integer.toString(reading.limit) : UNAVAILABLE;
-        String status = UNAVAILABLE.equals(speed) ? "Waiting for GPS"
-                : currentLimit ? "Tracking" : "Waze limit unavailable";
+        String status = UNAVAILABLE.equals(speed) ? "Waiting for GPS" : "";
         String display = speed + "|" + unit + "|" + limit + "|" + status;
         if (force || !display.equals(rendered)) {
             rendered = display;
@@ -213,14 +332,8 @@ public final class SpeedWidgetService extends Service implements LocationListene
 
     @Override
     public void onDestroy() {
-        handler.removeCallbacks(tick);
-        if (locationManager != null) {
-            locationManager.removeUpdates(this);
-        }
-        if (running == this) {
-            running = null;
-        }
-        refresh(this);
+        if (manual) unregisterReceiver(screen);
+        endTracking();
         super.onDestroy();
     }
 

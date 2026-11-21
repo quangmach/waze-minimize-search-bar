@@ -10,7 +10,10 @@ import app.morphe.patcher.patch.mutableClassDefBy
 import app.morphe.patcher.patch.patch
 import app.morphe.patcher.patch.resourceFile
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMutable
+import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
+import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import org.w3c.dom.Element
 
@@ -116,7 +119,7 @@ private val speedWidgetResources = patch {
 @Suppress("unused")
 val speedWidgetPatch = patch(
     name = "Add Speedometer/Speed Limit Widget",
-    description = "Adds a launcher widget with live GPS speed and current road limits from Waze when available.",
+    description = "Adds a home-screen speed dial with live GPS speed and a Waze road-limit badge.",
     default = false,
 ) {
     compatibleWith(
@@ -134,6 +137,16 @@ val speedWidgetPatch = patch(
             invoke-virtual/range {p0 .. p0}, ${location.definingClass}->${location.name}()Landroid/location/Location;
             move-result-object v0
             invoke-static {p2, p3, v0}, $WIDGET_SERVICE->onWazeLimit(Ljava/lang/String;ILandroid/location/Location;)V
+        """)
+
+        val startup = initializer.implementation!!.instructions
+        val gate = startup.indexOfFirst { instruction ->
+            val call = (instruction as? ReferenceInstruction)?.reference as? MethodReference
+            call?.definingClass == "Ljava/util/concurrent/atomic/AtomicBoolean;" && call.name == "getAndSet"
+        }
+        check(gate >= 0 && startup[gate + 1].opcode == Opcode.MOVE_RESULT && startup[gate + 2].opcode == Opcode.IF_NEZ)
+        initializer.addInstructions(gate + 3, """
+            invoke-static/range {p1 .. p1}, $WIDGET_SERVICE->onWazeEngineInitializing(Ljava/lang/Object;)V
         """)
 
         // Reuse the active engine. For overlapping cold starts, Waze's initializer
@@ -157,7 +170,7 @@ val speedWidgetPatch = patch(
             check-cast p0, ${initializer.definingClass}
             const-class v0, Lg/d/e;
             sget-object v1, Lg/d/k;->a:Lg/d/k;
-            invoke-static {v0, v1}, $WIDGET_SERVICE->newContinuation(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;
+            invoke-static {v0, v1, p0}, $WIDGET_SERVICE->newContinuation(Ljava/lang/Class;Ljava/lang/Object;Landroid/app/Application;)Ljava/lang/Object;
             move-result-object v0
             check-cast v0, Lg/d/e;
             invoke-virtual {p0, v0}, ${initializer.definingClass}->${initializer.name}(Lg/d/e;)Ljava/lang/Object;
