@@ -1,5 +1,6 @@
 package app.template.extension.extension;
 
+import android.net.Uri;
 import android.util.Log;
 
 import java.lang.reflect.Method;
@@ -12,9 +13,41 @@ public final class AndroidAutoPhoneMap {
 
     private static Object visibleSession;
     private static volatile boolean carScreenVisible;
+    private static volatile boolean projectionConnected;
     private static Bindings bindings;
 
     private AndroidAutoPhoneMap() {}
+
+    public static void onConnectionChanged(Object connection) {
+        projectionConnected = isProjection(connection);
+    }
+
+    public static boolean keepDestinationOnPhone() {
+        return projectionConnected && !carScreenVisible;
+    }
+
+    public static boolean routeDestinationToCar(boolean carConnected) {
+        return carConnected && !keepDestinationOnPhone();
+    }
+
+    public static boolean acceptSharedText(boolean enabled) {
+        return enabled || keepDestinationOnPhone();
+    }
+
+    public static boolean openSharedTextOnPhone(String text) {
+        return keepDestinationOnPhone() && text != null && !text.trim().isEmpty();
+    }
+
+    public static String phoneSearchQuery(String link) {
+        if (link == null || !keepDestinationOnPhone()) return null;
+        Uri uri = Uri.parse(link);
+        if (!"waze".equalsIgnoreCase(uri.getScheme()) || !uri.isHierarchical()) return null;
+        for (String name : uri.getQueryParameterNames()) {
+            if (!name.equals("q") && !name.startsWith("utm_")) return null;
+        }
+        String query = uri.getQueryParameter("q");
+        return query == null || query.trim().isEmpty() ? null : query;
+    }
 
     public static synchronized void onSessionEvent(Object session, Enum<?> event) {
         if (!MAIN_SESSION.equals(session.getClass().getName())) return;
