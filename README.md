@@ -4,6 +4,8 @@ A Morphe patch for Waze Mod that hides the search sheet when you tap the map, an
 
 **Move & Resize Speedometer** is an experimental, optional patch. Long-press the speedometer, keep holding, and drag it. While holding, add a second finger and pinch to resize. Position and size are saved. This targets Waze's named speedometer view rather than an obfuscated version-specific class; Waze updates may still change that view or its layout.
 
+**Add Speedometer/Speed Limit Widget** adds the **Waze Speedometer** launcher widget to original Waze 5.27.5.0. Add it from the launcher’s widget picker, tap **Start**, and allow precise location. It shows GPS speed with Waze’s map screen closed and shares the Waze engine for posted limits. The limit shows **—** when Waze has no current reading. Emulator testing confirmed live speed and one engine startup in either launch order. Numeric posted limits are still unverified on the emulator.
+
 ## Add to Morphe
 
 In Morphe Manager, open **Sources**, add a source, and enter:
