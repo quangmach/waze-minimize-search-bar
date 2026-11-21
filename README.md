@@ -23,3 +23,5 @@ The repository contains patch source only; it does not distribute Waze or its AP
 Use JDK 21, the Android SDK, and Morphe's Gradle dependencies. Run `./gradlew buildAndroid`; the output is under `patches/build/libs/`. GitHub Packages access may require credentials. Optional sibling checkouts of Morphe's patcher and Gradle plugin can be used instead, as configured in `settings.gradle.kts`.
 
 Based on Morphe's patches template. Licensed under GPL-3.0; see LICENSE and NOTICE.
+
+**Remove Car mode when Waze inactive on Android Auto** restores the phone map while another app is visible on Android Auto. This optional experimental patch targets original Waze 5.27.5.0 and was tested with the Android Auto Desktop Head Unit and an emulator.
