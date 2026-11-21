@@ -2,7 +2,6 @@ package app.template.extension.extension;
 
 import android.app.Activity;
 import android.app.ActivityOptions;
-import android.app.Application;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
@@ -10,30 +9,15 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.Display;
 
-import java.util.Collections;
-import java.util.Set;
-import java.util.WeakHashMap;
+import java.lang.ref.WeakReference;
 
 public final class SharedDestinationActivity extends Activity {
     private static final String TAG = "QM-WazeDestination";
     private static final String WAZE_ENTRY = "com.waze.FreeMapAppActivity";
-    private static final Set<Activity> visibleActivities =
-            Collections.newSetFromMap(new WeakHashMap<>());
-    private static boolean tracking;
+    private static WeakReference<Activity> runningMap = new WeakReference<>(null);
 
     public static void trackDisplay(Activity mapActivity) {
-        visibleActivities.add(mapActivity);
-        if (tracking) return;
-        tracking = true;
-        mapActivity.getApplication().registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
-            @Override public void onActivityStarted(Activity activity) { visibleActivities.add(activity); }
-            @Override public void onActivityStopped(Activity activity) { visibleActivities.remove(activity); }
-            @Override public void onActivityDestroyed(Activity activity) { visibleActivities.remove(activity); }
-            @Override public void onActivityCreated(Activity activity, Bundle state) {}
-            @Override public void onActivityResumed(Activity activity) {}
-            @Override public void onActivityPaused(Activity activity) {}
-            @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
-        });
+        runningMap = new WeakReference<>(mapActivity);
     }
 
     @Override
@@ -63,30 +47,32 @@ public final class SharedDestinationActivity extends Activity {
         }
 
         if (Build.VERSION.SDK_INT >= 26) {
-            int displayId = visibleAnyAutoDisplay();
+            int displayId = currentWazeDisplay();
             if (displayId != Display.INVALID_DISPLAY) {
                 try {
                     Bundle options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle();
                     startActivity(destination, options);
-                    Log.i(TAG, "Opened shared destination on AnyAuto display " + displayId);
+                    Log.i(TAG, "Opened shared destination on Waze display " + displayId);
                     return;
                 } catch (SecurityException | IllegalArgumentException error) {
-                    Log.w(TAG, "AnyAuto display is unavailable", error);
+                    Log.w(TAG, "Waze display is unavailable", error);
                 }
             }
         }
         startActivity(destination);
     }
 
-    private static int visibleAnyAutoDisplay() {
-        for (Activity activity : visibleActivities) {
-            if (activity instanceof SharedDestinationActivity || activity.isFinishing()) continue;
-            Display display = activity.getWindowManager().getDefaultDisplay();
-            if (display != null && display.isValid() && display.getState() == Display.STATE_ON
-                    && "AnyAuto".equals(display.getName())) {
-                return display.getDisplayId();
-            }
+    @SuppressWarnings("deprecation")
+    private static int currentWazeDisplay() {
+        Activity activity = runningMap.get();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return Display.INVALID_DISPLAY;
+
+        // Query the activity's current display so moves and display removal are picked up.
+        Display display = Build.VERSION.SDK_INT >= 30
+                ? activity.getDisplay() : activity.getWindowManager().getDefaultDisplay();
+        if (display == null || !display.isValid() || display.getState() == Display.STATE_OFF) {
+            return Display.INVALID_DISPLAY;
         }
-        return Display.INVALID_DISPLAY;
+        return display.getDisplayId();
     }
 }

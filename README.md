@@ -24,4 +24,4 @@ Use JDK 21, the Android SDK, and Morphe's Gradle dependencies. Run `./gradlew bu
 
 Based on Morphe's patches template. Licensed under GPL-3.0; see LICENSE and NOTICE.
 
-**Remove Car mode when Waze inactive on Android Auto** keeps the phone map and shared destinations on the phone while another app is visible on Android Auto. Shared destinations stay in the AnyAuto pane when Waze is already visible there. This optional experimental patch targets original Waze 5.27.5.0 and was tested with the Android Auto Desktop Head Unit and an emulator.
+**Remove Car mode when Waze inactive on Android Auto** keeps the phone map and shared destinations on the phone while another app is visible on Android Auto. Shared destinations open on the display where the Waze map is already running. This optional experimental patch targets original Waze 5.27.5.0 and was tested with the Android Auto Desktop Head Unit and an emulator.

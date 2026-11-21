@@ -156,7 +156,7 @@ private fun MutableMethod.gateDestinationConnection(expectedCalls: Int) {
 @Suppress("unused")
 val androidAutoPhoneMapPatch = patch(
     name = "Remove Car mode when Waze inactive on Android Auto",
-    description = "Keep Waze’s map and shared destinations on the phone while Waze is off the Android Auto screen.",
+    description = "Keep the phone map available while Waze is off the Android Auto screen and open shared destinations on Waze’s current display.",
     default = false,
 ) {
     compatibleWith(Compatibility(name = "Waze", packageName = "com.waze", targets = listOf(
