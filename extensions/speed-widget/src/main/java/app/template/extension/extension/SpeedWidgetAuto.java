@@ -39,7 +39,7 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
     }
 
     static boolean enabled(Context context) {
-        return prefs(context).getBoolean(ENABLED, false);
+        return prefs(context).getBoolean(ENABLED, true);
     }
 
     static boolean hasWidgets(Context context) {
@@ -53,6 +53,11 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
                     || granted(context, Manifest.permission.ACTIVITY_RECOGNITION));
     }
 
+    static boolean hasAllPermissions(Context context) {
+        return available(context) && granted(context, Manifest.permission.BLUETOOTH_CONNECT)
+                && granted(context, Manifest.permission.ACTIVITY_RECOGNITION);
+    }
+
     static boolean armed(Context context) {
         return hasWidgets(context) && enabled(context) && available(context);
     }
@@ -63,6 +68,10 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
 
     static void enable(Context context) {
         prefs(context).edit().putBoolean(ENABLED, true).apply();
+        startMonitoring(context);
+    }
+
+    static void startMonitoring(Context context) {
         observe(context);
         SpeedWidgetBluetooth.checkConnectedAudio(context.getApplicationContext());
         SpeedWidgetService.refresh(context);
@@ -94,7 +103,7 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
 
     static String idleHint(Context context) {
         if (!enabled(context)) return "Tap to start";
-        if (!available(context)) return "Check permissions";
+        if (!available(context)) return "Allow auto access";
         if (prefs(context).getBoolean(PAUSED, false)) return "Paused for this trip";
         return "Auto tracking ready";
     }

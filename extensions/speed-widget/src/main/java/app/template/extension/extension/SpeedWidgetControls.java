@@ -11,6 +11,8 @@ import android.os.Bundle;
 
 public final class SpeedWidgetControls extends Activity {
     private static final int LOCATION = 1;
+    private static final int AUTO_SETUP = 2;
+    private static final String REQUESTED_SETUP = "requested_setup";
     private boolean configuring;
     private boolean requestedSetup;
     private int widgetId;
@@ -20,6 +22,7 @@ public final class SpeedWidgetControls extends Activity {
         super.onCreate(state);
         widgetId = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
         configuring = AppWidgetManager.ACTION_APPWIDGET_CONFIGURE.equals(getIntent().getAction());
+        requestedSetup = state != null && state.getBoolean(REQUESTED_SETUP);
         if (!SpeedWidget.isBound(this, widgetId)) {
             finish();
             return;
@@ -29,24 +32,32 @@ public final class SpeedWidgetControls extends Activity {
             return;
         }
         boolean running = SpeedWidgetService.isTracking();
+        boolean needsAutoAccess = !running && SpeedWidgetAuto.enabled(this) && !SpeedWidgetAuto.available(this);
         new AlertDialog.Builder(this)
                 .setTitle("Waze Speedometer")
                 .setMessage(running
                         ? "GPS speed is being tracked for the launcher widget."
+                        : needsAutoAccess ? "Allow permissions to start tracking automatically on trips."
                         : "Use your location for live GPS speed and available Waze speed limits.")
-                .setPositiveButton(running ? "Stop" : "Start", (dialog, button) -> {
+                .setPositiveButton(running ? "Stop" : needsAutoAccess ? "Allow permissions" : "Start", (dialog, button) -> {
                     if (running) {
                         startService(new Intent(this, SpeedWidgetService.class).setAction(SpeedWidgetService.STOP));
                         finish();
-                    } else if (hasLocation()) {
-                        startTracking();
+                    } else if (needsAutoAccess) {
+                        startActivity(new Intent(this, SpeedWidgetAutoSettings.class)
+                                .putExtra(SpeedWidgetAutoSettings.EXTRA_WIDGET_SETUP, true));
+                        finish();
                     } else {
-                        requestLocation();
+                        startManually();
                     }
                 })
-                .setNeutralButton("Auto tracking", (dialog, button) -> {
-                    startActivity(new Intent(this, SpeedWidgetAutoSettings.class));
-                    finish();
+                .setNeutralButton(needsAutoAccess ? "Start manually" : "Auto tracking", (dialog, button) -> {
+                    if (needsAutoAccess) {
+                        startManually();
+                    } else {
+                        startActivity(new Intent(this, SpeedWidgetAutoSettings.class));
+                        finish();
+                    }
                 })
                 .setNegativeButton("Cancel", (dialog, button) -> finish())
                 .setOnCancelListener(dialog -> finish())
@@ -58,11 +69,33 @@ public final class SpeedWidgetControls extends Activity {
         super.onPostResume();
         if (!configuring || requestedSetup || isFinishing()) return;
         requestedSetup = true;
-        if (SpeedWidgetAuto.armed(this)) {
-            SpeedWidgetAuto.observe(this);
-            SpeedWidgetBluetooth.checkConnectedAudio(getApplicationContext());
-            finishSetup();
-        } else if (hasLocation()) startTracking();
+        if (SpeedWidgetAuto.enabled(this)) {
+            if (SpeedWidgetAuto.hasAllPermissions(this)) {
+                SpeedWidgetAuto.startMonitoring(this);
+                finishSetup();
+            } else {
+                startActivityForResult(new Intent(this, SpeedWidgetAutoSettings.class)
+                        .putExtra(SpeedWidgetAutoSettings.EXTRA_WIDGET_SETUP, true), AUTO_SETUP);
+            }
+        } else {
+            startManually();
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean(REQUESTED_SETUP, requestedSetup);
+        super.onSaveInstanceState(state);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == AUTO_SETUP) finishSetup();
+    }
+
+    private void startManually() {
+        if (hasLocation()) startTracking();
         else requestLocation();
     }
 

@@ -12,13 +12,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class SpeedWidgetAutoSettings extends Activity {
+    static final String EXTRA_WIDGET_SETUP = "app.template.extension.extension.SPEED_WIDGET_SETUP";
+    private static final String AWAITING_PERMISSION = "awaiting_permission";
     private static final int PRECISE_LOCATION = 1;
     private static final int TRIP_SIGNALS = 2;
     private static final int LOCATION_SETTINGS = 3;
+    private boolean widgetSetup;
+    private boolean awaitingPermission;
+    private boolean requestedSetup;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        widgetSetup = getIntent().getBooleanExtra(EXTRA_WIDGET_SETUP, false);
+        awaitingPermission = state != null && state.getBoolean(AWAITING_PERMISSION);
+        if (widgetSetup || awaitingPermission) return;
+
         boolean enabled = SpeedWidgetAuto.enabled(this);
         AlertDialog.Builder dialog = new AlertDialog.Builder(this)
                 .setTitle("Automatic speedometer")
@@ -36,10 +45,26 @@ public final class SpeedWidgetAutoSettings extends Activity {
         dialog.setPositiveButton(enabled ? "Check permissions" : "Enable", (d, which) -> requestPreciseLocation()).show();
     }
 
+    @Override
+    protected void onPostResume() {
+        super.onPostResume();
+        if (widgetSetup && !awaitingPermission && !requestedSetup && !isFinishing()) {
+            requestedSetup = true;
+            requestPreciseLocation();
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean(AWAITING_PERMISSION, awaitingPermission);
+        super.onSaveInstanceState(state);
+    }
+
     private void requestPreciseLocation() {
         if (SpeedWidgetAuto.granted(this, Manifest.permission.ACCESS_FINE_LOCATION)) {
             requestTripSignals();
         } else {
+            awaitingPermission = true;
             requestPermissions(new String[] { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION },
                     PRECISE_LOCATION);
         }
@@ -51,7 +76,10 @@ public final class SpeedWidgetAutoSettings extends Activity {
             if (!SpeedWidgetAuto.granted(this, permission)) missing.add(permission);
         }
         if (missing.isEmpty()) requestBackgroundLocation();
-        else requestPermissions(missing.toArray(new String[0]), TRIP_SIGNALS);
+        else {
+            awaitingPermission = true;
+            requestPermissions(missing.toArray(new String[0]), TRIP_SIGNALS);
+        }
     }
 
     private void requestBackgroundLocation() {
@@ -66,9 +94,12 @@ public final class SpeedWidgetAutoSettings extends Activity {
                     .setTitle("Allow background location")
                     .setMessage("Open Waze’s app permissions, choose Location, and select “" + option
                             + "” with precise location enabled. Then return here.")
-                    .setPositiveButton("Open settings", (d, which) -> startActivityForResult(
-                            new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null)),
-                            LOCATION_SETTINGS))
+                    .setPositiveButton("Open settings", (d, which) -> {
+                        awaitingPermission = true;
+                        startActivityForResult(
+                                new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null)),
+                                LOCATION_SETTINGS);
+                    })
                     .setNegativeButton("Cancel", (d, which) -> finish())
                     .setOnCancelListener(d -> finish())
                     .show();
@@ -77,8 +108,12 @@ public final class SpeedWidgetAutoSettings extends Activity {
 
     private void enable() {
         if (SpeedWidgetAuto.available(this)) {
-            SpeedWidgetService.useAutoOnly();
-            SpeedWidgetAuto.enable(this);
+            if (widgetSetup) {
+                SpeedWidgetAuto.startMonitoring(this);
+            } else {
+                SpeedWidgetService.useAutoOnly();
+                SpeedWidgetAuto.enable(this);
+            }
             finish();
         } else {
             showMessage("Automatic tracking needs precise location with “"
@@ -95,6 +130,8 @@ public final class SpeedWidgetAutoSettings extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
+        awaitingPermission = false;
+        requestedSetup = true;
         if (requestCode == PRECISE_LOCATION) {
             if (SpeedWidgetAuto.granted(this, Manifest.permission.ACCESS_FINE_LOCATION)) requestTripSignals();
             else showMessage("Allow precise location for automatic speed readings.");
@@ -106,6 +143,10 @@ public final class SpeedWidgetAutoSettings extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == LOCATION_SETTINGS) enable();
+        if (requestCode == LOCATION_SETTINGS) {
+            awaitingPermission = false;
+            requestedSetup = true;
+            enable();
+        }
     }
 }

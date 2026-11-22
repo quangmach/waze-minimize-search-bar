@@ -8,7 +8,9 @@ A Morphe patch for Waze Mod that hides the search sheet when you tap the map, an
 
 The widget shows GPS speed while the Waze map is closed and attaches a badge when Waze returns a posted limit. It shares the active Waze engine and stops an engine it started for itself when tracking ends and there is no independent Waze session. The badge was verified with sample readings. Live posted limits are still unverified on the emulator.
 
-Tap the dial, choose **Auto tracking**, then select **Enable** to start and stop tracking by trip. A paired device that reports Car Audio or a Bluetooth LE motorized-vehicle type can start tracking on connection. Tracking stops after 15 seconds of disconnection unless the vehicle reconnects. Google Play services' **In vehicle** detection starts and stops tracking when a recognized Bluetooth vehicle is unavailable. The widget stays active through screen-off during automatic trips.
+Automatic trip tracking is on by default. Adding the widget asks for any missing permissions and then waits for a trip. For an existing widget that needs access, tap the dial and choose **Allow permissions**. You can turn off automatic tracking from the widget controls.
+
+A paired device that reports Car Audio or a Bluetooth LE motorized-vehicle type can start tracking on connection. Tracking stops after 15 seconds of disconnection unless the vehicle reconnects. Google Play services' **In vehicle** detection is the fallback. Automatic trips continue when the phone is asleep or locked. The screen-off rule for manual tracking follows Android's device-wide sleep state.
 
 Grant **Nearby devices** for Bluetooth detection and **Physical activity** for the motion fallback. In Waze's Location permissions, enable precise location and choose **Allow all the time** so a trip can start while the app is in the background. Waze already declares Bluetooth connection and background location permissions. The patch adds the Physical activity permission.
 
