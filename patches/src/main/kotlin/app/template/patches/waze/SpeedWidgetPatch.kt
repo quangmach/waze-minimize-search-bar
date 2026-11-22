@@ -21,6 +21,27 @@ private const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
 private const val LOCATION_LISTENER = "Lcom/waze/location/LocationSensorListener;"
 private const val WIDGET_PACKAGE = "app.template.extension.extension"
 private const val WIDGET_SERVICE = "Lapp/template/extension/extension/SpeedWidgetService;"
+private const val PROJECTION_AUTHORITY = "androidx.car.app.connection"
+
+private object WazeWidgetApplication : Fingerprint(
+    definingClass = "Lcom/waze/ls;",
+    name = "onCreate",
+    parameters = emptyList(),
+    returnType = "V",
+)
+
+private object WazeWidgetMapResume : Fingerprint(
+    definingClass = "Lcom/waze/MainActivity;",
+    name = "onResume",
+    parameters = emptyList(),
+    returnType = "V",
+)
+
+private object WazeSpeedLimitSign : Fingerprint(
+    definingClass = "Lcom/waze/bz/i;",
+    name = "<init>",
+    parameters = listOf("I", "Ljava/lang/String;", "Z", "I", "Z", "Z", "Z", "Z"),
+)
 
 private object WazeSpeedUpdate : Fingerprint(
     definingClass = LOCATION_LISTENER,
@@ -68,6 +89,16 @@ private val speedWidgetResources = patch {
 
         document("AndroidManifest.xml").use { manifest ->
             val application = manifest.getElementsByTagName("application").item(0) as Element
+            val queries = (manifest.getElementsByTagName("queries").item(0) as? Element)
+                ?: manifest.createElement("queries").also { manifest.documentElement.insertBefore(it, application) }
+            val queryProviders = queries.getElementsByTagName("provider")
+            if ((0 until queryProviders.length).none {
+                    (queryProviders.item(it) as Element).getAttributeNS(ANDROID_NS, "authorities") == PROJECTION_AUTHORITY
+                }) {
+                queries.appendChild(manifest.createElement("provider").apply {
+                    androidAttribute("authorities", PROJECTION_AUTHORITY)
+                })
+            }
             val existingPermissions = manifest.getElementsByTagName("uses-permission")
             listOf(
                 "ACCESS_COARSE_LOCATION",
@@ -151,7 +182,7 @@ private val speedWidgetResources = patch {
 @Suppress("unused")
 val speedWidgetPatch = patch(
     name = "Add Speedometer/Speed Limit Widget",
-    description = "Adds a home-screen speed dial and Waze road-limit badge with optional automatic trip tracking.",
+    description = "Shows Waze’s speedometer and road-limit badge on the home screen with automatic trip detection.",
     default = false,
 ) {
     compatibleWith(
@@ -164,6 +195,22 @@ val speedWidgetPatch = patch(
         val update = WazeSpeedUpdate.method
         val initializer = WazeEngineInitializer.method
         val started = WazeEngineStarted.method
+        val application = WazeWidgetApplication.method
+        val superOnCreate = application.implementation!!.instructions.indexOfFirst {
+            val reference = (it as? ReferenceInstruction)?.reference as? MethodReference
+            reference?.definingClass == "Landroid/app/Application;" && reference.name == "onCreate"
+        }
+        check(superOnCreate >= 0)
+        application.addInstructions(superOnCreate + 1, """
+            invoke-static/range {p0 .. p0}, Lapp/template/extension/extension/SpeedWidgetProjection;->observe(Landroid/content/Context;)V
+        """)
+        WazeWidgetMapResume.method.addInstructions(0, """
+            invoke-static/range {p0 .. p0}, Lapp/template/extension/extension/SpeedWidgetProjection;->checkConnection(Landroid/content/Context;)V
+        """)
+        val sign = WazeSpeedLimitSign.method
+        sign.addInstructions(0, """
+            invoke-static {p3}, Lapp/template/extension/extension/SpeedWidget;->onWazeLimitSign(Z)V
+        """)
         check(update.implementation!!.registerCount > 6)
         update.addInstructions(0, """
             invoke-virtual/range {p0 .. p0}, ${location.definingClass}->${location.name}()Landroid/location/Location;

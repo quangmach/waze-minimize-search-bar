@@ -31,7 +31,8 @@ public final class SpeedWidgetAutoSettings extends Activity {
         boolean enabled = SpeedWidgetAuto.enabled(this);
         AlertDialog.Builder dialog = new AlertDialog.Builder(this)
                 .setTitle("Automatic speedometer")
-                .setMessage("Start with a recognized vehicle’s Bluetooth connection or when Android detects vehicle travel. "
+                .setMessage("Start when Android Auto connects, with a recognized vehicle’s Bluetooth connection, "
+                        + "or when Android detects vehicle travel. "
                         + "Nearby devices and Physical activity enable those triggers. Precise location and background location "
                         + "let the dial work while Waze’s map is closed.")
                 .setNegativeButton("Cancel", (d, which) -> finish())

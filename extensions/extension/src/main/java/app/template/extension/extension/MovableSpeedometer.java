@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Display;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -51,6 +52,9 @@ public final class MovableSpeedometer {
         View target;
         boolean armed, capturing, editing, moved, anchored;
         float anchorX, anchorY;
+        String placementKey;
+        final int[] targetLocation = new int[2];
+        final int[] decorLocation = new int[2];
         float startX, startY, lastX, lastY, lastSpan;
         final Runnable activate = () -> { if (armed) editing = true; };
 
@@ -62,52 +66,75 @@ public final class MovableSpeedometer {
         void findTarget() {
             int id = activity.getResources().getIdentifier("Speedometer", "id", activity.getPackageName());
             View found = id == 0 ? null : activity.findViewById(id);
-            if (found == null || found == target) return;
+            if (found == target) return;
+            handler.removeCallbacks(activate);
+            armed = editing = false;
             target = found;
+            placementKey = null;
+            if (target == null) return;
             android.util.Log.i("QM-Speedometer", "Found speedometer view");
             for (ViewParent parent = target.getParent(); parent instanceof ViewGroup; parent = parent.getParent()) {
                 ((ViewGroup) parent).setClipChildren(false);
                 ((ViewGroup) parent).setClipToPadding(false);
             }
-            restore();
         }
 
-        void restore() {
-            target.post(() -> {
+        private void restore(View decor, String key) {
+            // Display IDs can change when an external or virtual display reconnects.
+            placementKey = key;
+            String saved = key;
+            if (!prefs.contains(saved + "anchor_x")) saved = "primary_" + key.substring(key.indexOf('_') + 1);
+            if (!prefs.contains(saved + "anchor_x")) saved = "primary_tall_";
+            if (!prefs.contains(saved + "anchor_x")) saved = "";
+            float scale = prefs.getFloat(saved + "scale", 1f);
+            target.setScaleX(scale);
+            target.setScaleY(scale);
+            anchored = prefs.contains(saved + "anchor_x") && prefs.contains(saved + "anchor_y");
+            if (anchored) {
+                anchorX = prefs.getFloat(saved + "anchor_x", 0f);
+                anchorY = prefs.getFloat(saved + "anchor_y", 0f);
+            } else {
                 float density = target.getResources().getDisplayMetrics().density;
                 target.setTranslationX(prefs.getFloat("x", 0f) * density);
                 target.setTranslationY(prefs.getFloat("y", 0f) * density);
-                float scale = prefs.getFloat("scale", 1f);
-                target.setScaleX(scale); target.setScaleY(scale);
-                anchored = prefs.contains("anchor_x") && prefs.contains("anchor_y");
-                if (anchored) {
-                    anchorX = prefs.getFloat("anchor_x", 0f);
-                    anchorY = prefs.getFloat("anchor_y", 0f);
-                } else if (prefs.contains("x") || prefs.contains("y")) {
-                    // Migrate positions saved by earlier versions after layout completes.
-                    rememberPosition();
-                }
-            });
+                if (prefs.contains("x") || prefs.contains("y")) rememberPosition(decor);
+            }
         }
 
-        void rememberPosition() {
-            View decor = activity.getWindow().getDecorView();
-            if (target == null || decor.getWidth() <= 0 || decor.getHeight() <= 0) return;
-            int[] pos = new int[2];
-            target.getLocationOnScreen(pos);
-            anchorX = (float) pos[0] / decor.getWidth();
-            anchorY = (float) pos[1] / decor.getHeight();
+        private void rememberPosition(View decor) {
+            target.getLocationOnScreen(targetLocation);
+            decor.getLocationOnScreen(decorLocation);
+            anchorX = clamp(targetLocation[0] - decorLocation[0], decor.getWidth() - target.getWidth() * target.getScaleX())
+                    / decor.getWidth();
+            anchorY = clamp(targetLocation[1] - decorLocation[1], decor.getHeight() - target.getHeight() * target.getScaleY())
+                    / decor.getHeight();
             anchored = true;
         }
 
+        private static float clamp(float position, float max) {
+            return Math.max(0f, Math.min(position, max));
+        }
+
         boolean stabilizePosition() {
-            if (!anchored || editing || target == null || !target.isAttachedToWindow()) return true;
+            if (target == null || !target.isAttachedToWindow() || !target.isLaidOut()) return true;
             View decor = activity.getWindow().getDecorView();
             if (decor.getWidth() <= 0 || decor.getHeight() <= 0) return true;
-            int[] pos = new int[2];
-            target.getLocationOnScreen(pos);
-            float dx = anchorX * decor.getWidth() - pos[0];
-            float dy = anchorY * decor.getHeight() - pos[1];
+            Display display = decor.getDisplay();
+            if (display == null) return true;
+            String key = (display.getDisplayId() == Display.DEFAULT_DISPLAY ? "primary_" : "secondary_")
+                    + (decor.getWidth() > decor.getHeight() ? "wide_" : "tall_");
+            if (!key.equals(placementKey)) {
+                handler.removeCallbacks(activate);
+                armed = editing = false;
+                restore(decor, key);
+            }
+            if (!anchored || editing) return true;
+            target.getLocationOnScreen(targetLocation);
+            decor.getLocationOnScreen(decorLocation);
+            float x = clamp(anchorX * decor.getWidth(), decor.getWidth() - target.getWidth() * target.getScaleX());
+            float y = clamp(anchorY * decor.getHeight(), decor.getHeight() - target.getHeight() * target.getScaleY());
+            float dx = decorLocation[0] + x - targetLocation[0];
+            float dy = decorLocation[1] + y - targetLocation[1];
             if (Math.abs(dx) >= 1f) target.setTranslationX(target.getTranslationX() + dx);
             if (Math.abs(dy) >= 1f) target.setTranslationY(target.getTranslationY() + dy);
             return true;
@@ -158,10 +185,12 @@ public final class MovableSpeedometer {
                 case MotionEvent.ACTION_CANCEL:
                     handler.removeCallbacks(activate); armed = false;
                     boolean consumed = capturing;
-                    if (editing && moved) {
-                        float density = target.getResources().getDisplayMetrics().density;
-                        rememberPosition();
-                        prefs.edit().putFloat("x", target.getTranslationX() / density).putFloat("y", target.getTranslationY() / density).putFloat("scale", target.getScaleX()).putFloat("anchor_x", anchorX).putFloat("anchor_y", anchorY).apply();
+                    if (event.getActionMasked() == MotionEvent.ACTION_UP && editing && moved && placementKey != null) {
+                        View decor = activity.getWindow().getDecorView();
+                        rememberPosition(decor);
+                        prefs.edit().putFloat(placementKey + "scale", target.getScaleX())
+                                .putFloat(placementKey + "anchor_x", anchorX)
+                                .putFloat(placementKey + "anchor_y", anchorY).apply();
                     }
                     editing = false; capturing = false; return consumed;
                 default: return capturing;

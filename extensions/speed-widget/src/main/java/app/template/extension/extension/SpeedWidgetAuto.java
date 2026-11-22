@@ -31,6 +31,7 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
     private static final String ENABLED = "enabled";
     private static final String VEHICLES = "connected_vehicles";
     private static final String IN_VEHICLE = "motion_trip";
+    private static final String PROJECTION = "android_auto";
     private static final String PAUSED = "paused_for_trip";
     private static boolean observingMotion;
 
@@ -48,9 +49,7 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
 
     static boolean available(Context context) {
         return granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                && granted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                && (granted(context, Manifest.permission.BLUETOOTH_CONNECT)
-                    || granted(context, Manifest.permission.ACTIVITY_RECOGNITION));
+                && granted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION);
     }
 
     static boolean hasAllPermissions(Context context) {
@@ -72,6 +71,7 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
     }
 
     static void startMonitoring(Context context) {
+        SpeedWidgetProjection.checkConnection(context);
         observe(context);
         SpeedWidgetBluetooth.checkConnectedAudio(context.getApplicationContext());
         SpeedWidgetService.refresh(context);
@@ -83,6 +83,7 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
     }
 
     static void removeWatchers(Context context) {
+        SpeedWidgetProjection.remove(context);
         clearTrip(context);
         observingMotion = false;
         PendingIntent intent = motionIntent(context, PendingIntent.FLAG_NO_CREATE);
@@ -105,10 +106,11 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
         if (!enabled(context)) return "Tap to start";
         if (!available(context)) return "Allow auto access";
         if (prefs(context).getBoolean(PAUSED, false)) return "Paused for this trip";
-        return "Auto tracking ready";
+        return "";
     }
 
     static void observe(Context context) {
+        SpeedWidgetProjection.observe(context);
         if (!armed(context) || observingMotion || !granted(context, Manifest.permission.ACTIVITY_RECOGNITION)) return;
         try {
             ActivityTransitionRequest request = new ActivityTransitionRequest(Arrays.asList(
@@ -148,6 +150,7 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction()) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(intent.getAction())) {
             clearTrip(context);
+            SpeedWidgetService.refresh(context);
             observe(context);
             if (armed(context)) SpeedWidgetBluetooth.checkConnectedAudio(context.getApplicationContext());
             return;
@@ -177,6 +180,17 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
         return granted(context, Manifest.permission.BLUETOOTH_CONNECT) && !vehicles(context).isEmpty();
     }
 
+    static void projectionChanged(Context context, boolean connected) {
+        if (!armed(context)) return;
+        SharedPreferences settings = prefs(context);
+        boolean changed = settings.getBoolean(PROJECTION, false) != connected;
+        if (changed) {
+            settings.edit().putBoolean(PROJECTION, connected).apply();
+            Log.i(TAG, "Android Auto projection " + (connected ? "connected" : "disconnected"));
+        }
+        if (changed || (connected && !SpeedWidgetService.isTracking())) tripChanged(context, 0);
+    }
+
     static void vehicleConnected(Context context, String connection) {
         Set<String> connected = vehicles(context);
         connected.add(connection);
@@ -204,12 +218,12 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
     }
 
     private static boolean tripDetected(Context context) {
-        return hasVehicleBluetooth(context)
+        return prefs(context).getBoolean(PROJECTION, false) || hasVehicleBluetooth(context)
                 || (granted(context, Manifest.permission.ACTIVITY_RECOGNITION) && prefs(context).getBoolean(IN_VEHICLE, false));
     }
 
     private static void clearTrip(Context context) {
-        prefs(context).edit().remove(VEHICLES).remove(IN_VEHICLE).remove(PAUSED).apply();
+        prefs(context).edit().remove(PROJECTION).remove(VEHICLES).remove(IN_VEHICLE).remove(PAUSED).apply();
     }
 
     private static Set<String> vehicles(Context context) {

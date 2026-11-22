@@ -6,10 +6,22 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.util.Log;
 import android.widget.RemoteViews;
 
+import java.util.Locale;
+
 public final class SpeedWidget extends AppWidgetProvider {
+    private static SpeedWidgetDial renderer;
+    private static Configuration rendererConfiguration;
+    private static volatile Boolean usLimitSign;
+
+    public static void onWazeLimitSign(boolean useUsSign) {
+        usLimitSign = useUsSign;
+    }
+
     static ComponentName component(Context context) {
         return new ComponentName(context, SpeedWidget.class);
     }
@@ -42,7 +54,20 @@ public final class SpeedWidget extends AppWidgetProvider {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         int[] widgetIds = manager.getAppWidgetIds(component(context));
         if (widgetIds.length == 0) return;
-        Bitmap dial = SpeedWidgetDial.draw(speed, unit, limit, status);
+        Bitmap dial;
+        try {
+            Context app = context.getApplicationContext();
+            Configuration configuration = app.getResources().getConfiguration();
+            if (renderer == null || !configuration.equals(rendererConfiguration)) {
+                renderer = new SpeedWidgetDial(app);
+                rendererConfiguration = new Configuration(configuration);
+            }
+            Boolean sign = usLimitSign;
+            dial = renderer.draw(speed, unit, limit, sign != null ? sign : "US".equals(Locale.getDefault().getCountry()));
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            Log.w("QmWazeSpeedWidget", "Could not render Waze's speedometer", error);
+            return;
+        }
         int layout = resource(context, "layout", "qm_speed_widget");
         int container = resource(context, "id", "qm_widget_container");
         String speedDescription = "—".equals(speed) ? "Speed unavailable" : "Speed " + speed + " " + unit;
@@ -50,7 +75,8 @@ public final class SpeedWidget extends AppWidgetProvider {
         for (int id : widgetIds) {
             RemoteViews views = new RemoteViews(context.getPackageName(), layout);
             views.setImageViewBitmap(container, dial);
-            views.setContentDescription(container, speedDescription + ". " + limitDescription + ". " + status);
+            views.setContentDescription(container, speedDescription + ". " + limitDescription
+                    + (status.isEmpty() ? "." : ". " + status));
             Intent controls = new Intent(context, SpeedWidgetControls.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
