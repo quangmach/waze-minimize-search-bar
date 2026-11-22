@@ -28,7 +28,7 @@ public final class SpeedWidgetControls extends Activity {
             setResult(RESULT_CANCELED);
             return;
         }
-        boolean running = SpeedWidgetService.hasManualTracking();
+        boolean running = SpeedWidgetService.isTracking();
         new AlertDialog.Builder(this)
                 .setTitle("Waze Speedometer")
                 .setMessage(running
@@ -44,6 +44,10 @@ public final class SpeedWidgetControls extends Activity {
                         requestLocation();
                     }
                 })
+                .setNeutralButton("Auto tracking", (dialog, button) -> {
+                    startActivity(new Intent(this, SpeedWidgetAutoSettings.class));
+                    finish();
+                })
                 .setNegativeButton("Cancel", (dialog, button) -> finish())
                 .setOnCancelListener(dialog -> finish())
                 .show();
@@ -54,7 +58,11 @@ public final class SpeedWidgetControls extends Activity {
         super.onPostResume();
         if (!configuring || requestedSetup || isFinishing()) return;
         requestedSetup = true;
-        if (hasLocation()) startTracking();
+        if (SpeedWidgetAuto.armed(this)) {
+            SpeedWidgetAuto.observe(this);
+            SpeedWidgetBluetooth.checkConnectedAudio(getApplicationContext());
+            finishSetup();
+        } else if (hasLocation()) startTracking();
         else requestLocation();
     }
 

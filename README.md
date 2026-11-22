@@ -4,9 +4,13 @@ A Morphe patch for Waze Mod that hides the search sheet when you tap the map, an
 
 **Move & Resize Speedometer** is an experimental, optional patch. Long-press the speedometer, keep holding, and drag it. While holding, add a second finger and pinch to resize. Position and size are saved. This targets Waze's named speedometer view rather than an obfuscated version-specific class; Waze updates may still change that view or its layout.
 
-**Add Speedometer/Speed Limit Widget** adds a circular **Waze Speedometer** widget to the Android home screen for original Waze 5.27.5.0. It starts tracking when you add it and allow precise location. Removing the active widget or turning off the screen stops tracking. Tap the dial to start again or stop. Android’s widget provider API reports placement and removal, so switching apps or home-screen pages leaves the current tracking state in place.
+**Add Speedometer/Speed Limit Widget** adds a circular **Waze Speedometer** widget to the Android home screen for original Waze 5.27.5.0. In manual mode, tracking starts when you add the widget and allow precise location. Removing the active widget or turning off the screen stops manual tracking. Tap the dial to start again or stop. Android’s widget provider API reports placement and removal, so switching apps or home-screen pages leaves the current tracking state in place.
 
 The widget shows GPS speed while the Waze map is closed and attaches a badge when Waze returns a posted limit. It shares the active Waze engine and stops an engine it started for itself when tracking ends and there is no independent Waze session. The badge was verified with sample readings. Live posted limits are still unverified on the emulator.
+
+Tap the dial, choose **Auto tracking**, then select **Enable** to start and stop tracking by trip. A paired device that reports Car Audio or a Bluetooth LE motorized-vehicle type can start tracking on connection. Tracking stops after 15 seconds of disconnection unless the vehicle reconnects. Google Play services' **In vehicle** detection starts and stops tracking when a recognized Bluetooth vehicle is unavailable. The widget stays active through screen-off during automatic trips.
+
+Grant **Nearby devices** for Bluetooth detection and **Physical activity** for the motion fallback. In Waze's Location permissions, enable precise location and choose **Allow all the time** so a trip can start while the app is in the background. Waze already declares Bluetooth connection and background location permissions. The patch adds the Physical activity permission.
 
 ## Add to Morphe
 

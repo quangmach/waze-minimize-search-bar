@@ -23,6 +23,7 @@ public final class SpeedWidget extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] widgetIds) {
+        SpeedWidgetAuto.observe(context);
         SpeedWidgetService.refresh(context);
     }
 
@@ -33,6 +34,7 @@ public final class SpeedWidget extends AppWidgetProvider {
 
     @Override
     public void onDisabled(Context context) {
+        SpeedWidgetAuto.removeWatchers(context);
         context.stopService(new Intent(context, SpeedWidgetService.class));
     }
 

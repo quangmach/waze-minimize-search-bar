@@ -72,6 +72,10 @@ private val speedWidgetResources = patch {
             listOf(
                 "ACCESS_COARSE_LOCATION",
                 "ACCESS_FINE_LOCATION",
+                "ACCESS_BACKGROUND_LOCATION",
+                "ACTIVITY_RECOGNITION",
+                "BLUETOOTH_CONNECT",
+                "RECEIVE_BOOT_COMPLETED",
                 "FOREGROUND_SERVICE",
                 "FOREGROUND_SERVICE_LOCATION",
                 "POST_NOTIFICATIONS",
@@ -105,8 +109,36 @@ private val speedWidgetResources = patch {
                 androidAttribute("exported", "false")
                 androidAttribute("foregroundServiceType", "location")
             })
+            mapOf(
+                "SpeedWidgetBluetooth" to listOf(
+                    "android.bluetooth.device.action.ACL_CONNECTED",
+                    "android.bluetooth.device.action.ACL_DISCONNECTED",
+                    "android.bluetooth.adapter.action.STATE_CHANGED",
+                ),
+                "SpeedWidgetAuto" to listOf(
+                    "android.intent.action.BOOT_COMPLETED",
+                    "android.intent.action.MY_PACKAGE_REPLACED",
+                ),
+            ).forEach { (className, actions) ->
+                application.appendChild(manifest.createElement("receiver").apply {
+                    androidAttribute("name", "$WIDGET_PACKAGE.$className")
+                    androidAttribute("exported", (className == "SpeedWidgetBluetooth").toString())
+                    appendChild(manifest.createElement("intent-filter").apply {
+                        actions.forEach { action ->
+                            appendChild(manifest.createElement("action").apply { androidAttribute("name", action) })
+                        }
+                    })
+                })
+            }
             application.appendChild(manifest.createElement("activity").apply {
                 androidAttribute("name", "$WIDGET_PACKAGE.SpeedWidgetControls")
+                androidAttribute("exported", "false")
+                androidAttribute("excludeFromRecents", "true")
+                androidAttribute("taskAffinity", "")
+                androidAttribute("theme", "@android:style/Theme.Material.Dialog.Alert")
+            })
+            application.appendChild(manifest.createElement("activity").apply {
+                androidAttribute("name", "$WIDGET_PACKAGE.SpeedWidgetAutoSettings")
                 androidAttribute("exported", "false")
                 androidAttribute("excludeFromRecents", "true")
                 androidAttribute("taskAffinity", "")
@@ -119,13 +151,13 @@ private val speedWidgetResources = patch {
 @Suppress("unused")
 val speedWidgetPatch = patch(
     name = "Add Speedometer/Speed Limit Widget",
-    description = "Adds a home-screen speed dial with live GPS speed and a Waze road-limit badge.",
+    description = "Adds a home-screen speed dial and Waze road-limit badge with optional automatic trip tracking.",
     default = false,
 ) {
     compatibleWith(
         Compatibility(name = "Waze", packageName = "com.waze", targets = listOf(AppTarget("5.27.5.0"))),
     )
-    extendWith("extensions/extension.mpe")
+    extendWith("extensions/speed-widget.mpe")
     dependsOn(speedWidgetResources)
     execute {
         val location = WazeLastLocation.method

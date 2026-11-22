@@ -34,6 +34,7 @@ public final class SpeedWidgetService extends Service implements LocationListene
     private static final int NOTIFICATION_ID = 0x514D5701;
     private static final String CHANNEL = "qm_waze_speed_widget";
     static final String STOP = "app.template.extension.extension.STOP_SPEED_WIDGET";
+    private static final String START_AUTO = "app.template.extension.extension.START_SPEED_TRIP";
     private static final String UNAVAILABLE = "—";
     private static final long MAX_FIX_AGE_MS = 6000;
     private static final long ENGINE_IDLE_GRACE_MS = 3000;
@@ -56,6 +57,10 @@ public final class SpeedWidgetService extends Service implements LocationListene
             stopManualTracking();
         }
     };
+    private final Runnable endAutomatic = () -> {
+        automatic = false;
+        stopIfIdle();
+    };
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
@@ -67,6 +72,7 @@ public final class SpeedWidgetService extends Service implements LocationListene
     private Location gps;
     private String rendered;
     private boolean manual;
+    private boolean automatic;
     private int manualWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
 
     private static final class Reading {
@@ -88,8 +94,12 @@ public final class SpeedWidgetService extends Service implements LocationListene
         wazeReading = new Reading(normalizeUnit(units), limit, location);
     }
 
-    static boolean hasManualTracking() {
+    static boolean isTracking() {
         return running != null;
+    }
+
+    static void useAutoOnly() {
+        if (running != null) running.stopManualTracking();
     }
 
     static void widgetDeleted(int id) {
@@ -101,43 +111,75 @@ public final class SpeedWidgetService extends Service implements LocationListene
 
     static void refresh(Context context) {
         if (running == null) {
-            SpeedWidget.render(context, UNAVAILABLE, defaultUnit(), UNAVAILABLE, "Tap to start");
+            SpeedWidget.render(context, UNAVAILABLE, defaultUnit(), UNAVAILABLE, SpeedWidgetAuto.idleHint(context));
         } else {
             running.publish(true);
         }
     }
 
+    static void automaticChanged(Context context, boolean active, long stopDelayMs) {
+        SpeedWidgetService service = running;
+        if (service != null) {
+            service.handler.removeCallbacks(service.endAutomatic);
+            if (active) service.automatic = true;
+            else if (service.automatic) service.handler.postDelayed(service.endAutomatic, stopDelayMs);
+        } else if (active) {
+            try {
+                context.startForegroundService(new Intent(context, SpeedWidgetService.class).setAction(START_AUTO));
+            } catch (SecurityException | IllegalStateException error) {
+                Log.w("QmWazeSpeedWidget", "Android could not start automatic widget tracking", error);
+            }
+        } else {
+            refresh(context);
+        }
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null || STOP.equals(intent.getAction())) {
+        if (intent != null && STOP.equals(intent.getAction())) {
+            SpeedWidgetAuto.pauseTrip(this);
+            automatic = false;
+            handler.removeCallbacks(endAutomatic);
             stopManualTracking();
             return START_NOT_STICKY;
         }
-        int id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
+        boolean fromTrip = intent == null || START_AUTO.equals(intent.getAction());
 
         try {
             startForeground(NOTIFICATION_ID, notification());
-            if (!SpeedWidget.isBound(this, id)) {
-                if (!manual) stopManualTracking();
-                return START_NOT_STICKY;
-            }
-            if (!manual) {
-                IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
-                if (Build.VERSION.SDK_INT >= 33) {
-                    registerReceiver(screen, filter, Context.RECEIVER_NOT_EXPORTED);
-                } else {
-                    registerReceiver(screen, filter);
+            if (fromTrip) {
+                automatic = SpeedWidgetAuto.active(this);
+                handler.removeCallbacks(endAutomatic);
+            } else {
+                int id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
+                if (SpeedWidget.isBound(this, id) && getSystemService(PowerManager.class).isInteractive()) {
+                    startManualTracking(id);
                 }
-                manual = true;
             }
-            manualWidgetId = id;
-            if (!getSystemService(PowerManager.class).isInteractive() || !beginTracking()) {
+            if ((automatic || manual) && !beginTracking()) {
+                automatic = false;
                 stopManualTracking();
+            } else {
+                stopIfIdle();
             }
         } catch (IllegalArgumentException | SecurityException | IllegalStateException e) {
+            automatic = false;
             stopManualTracking();
         }
-        return START_NOT_STICKY;
+        return automatic ? START_STICKY : START_NOT_STICKY;
+    }
+
+    private void startManualTracking(int id) {
+        if (!manual) {
+            IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(screen, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(screen, filter);
+            }
+            manual = true;
+        }
+        manualWidgetId = id;
     }
 
     private boolean beginTracking() {
@@ -169,6 +211,11 @@ public final class SpeedWidgetService extends Service implements LocationListene
             manualWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
             unregisterReceiver(screen);
         }
+        stopIfIdle();
+    }
+
+    private void stopIfIdle() {
+        if (manual || automatic) return;
         stopForeground(STOP_FOREGROUND_REMOVE);
         endTracking();
         stopSelf();
@@ -333,6 +380,7 @@ public final class SpeedWidgetService extends Service implements LocationListene
     @Override
     public void onDestroy() {
         if (manual) unregisterReceiver(screen);
+        handler.removeCallbacks(endAutomatic);
         endTracking();
         super.onDestroy();
     }
