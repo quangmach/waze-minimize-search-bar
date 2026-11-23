@@ -16,7 +16,7 @@ Grant **Nearby devices** for Bluetooth detection and **Physical activity** for t
 
 ## Add to Morphe
 
-**Add navigation and alert widget** adds a separate **Waze Navigation & Alerts** home-screen widget for original Waze 5.27.5.0. It shows the next maneuver and distance, current speed, posted maximum speed, and up to four nearby Waze alerts. The widgets share one tracking service and Waze engine. Upcoming warnings can be spoken through Waze’s audio when its guidance mode permits alerts. The widget can display guidance once a route starts in Waze.
+**Add navigation and alert widget** adds a separate **Waze Navigation & Alerts** home-screen widget for original Waze 5.27.5.0. It shows current speed and the posted maximum speed. When upcoming alerts are available, the panel expands to show up to four alerts and the next maneuver on an active route, or the current street if Waze knows it. The widgets share one tracking service and Waze engine. Upcoming warnings can be spoken through Waze’s audio when its guidance mode permits alerts.
 
 In Morphe Manager, open **Sources**, add a source, and enter:
 

@@ -14,6 +14,7 @@ private const val ALERTER = "Lcom/waze/alerters/AlerterNativeManager;"
 private const val ALERT_UPDATE = "Lcom/waze/jni/protos/alerters/NativeAlertRepositoryUpdate;"
 private const val DISTANCE = "Lcom/waze/jni/protos/navigate/DistanceUpdate;"
 private const val NEXT_STREET = "Lcom/waze/jni/protos/navigate/NextStreetNameUpdate;"
+private const val CURRENT_STREET = "Lcom/waze/jni/protos/navigate/CurrentStreetNameUpdate;"
 
 private val navigationWidgetResources = patch {
     execute {
@@ -60,10 +61,21 @@ val navigationWidgetPatch = patch(
                 move-result-object v0
                 invoke-static {v0}, $NAV_WIDGET->street(Ljava/lang/String;)V
             """)
+        navigation.methods.single { it.name == "L" && it.parameterTypes == listOf(CURRENT_STREET) }
+            .addInstructions(0, """
+                invoke-virtual {p1}, $CURRENT_STREET->getStreetName()Ljava/lang/String;
+                move-result-object v0
+                invoke-static {v0}, $NAV_WIDGET->currentStreet(Ljava/lang/String;)V
+            """)
         mutableClassDefBy(ALERTER).methods.single { it.name == "b" && it.parameterTypes == listOf(ALERT_UPDATE) }
             .addInstructions(0, "invoke-static {p1}, $NAV_WIDGET->onAlerts(Ljava/lang/Object;)V")
 
         val widget = mutableClassDefBy(NAV_WIDGET)
+        widget.bindWidgetMethod("engineRunning", 1, """
+            invoke-static {}, Lcom/waze/NativeManager;->isAppStarted()Z
+            move-result v0
+            return v0
+        """)
         widget.bindWidgetMethod("soundMode", 1, """
             sget-object v0, Lcom/waze/config/ConfigValues;->CONFIG_VALUE_NAVIGATION_GUIDANCE_MODE:Lcom/waze/config/d;
             invoke-virtual {v0}, Lcom/waze/config/d;->a()Ljava/lang/String;

@@ -35,7 +35,8 @@ public final class NavigationWidget extends SpeedWidget {
     private static int instruction;
     private static int exitNumber;
     private static String turnDistance = "";
-    private static String street = "";
+    private static String nextStreet = "";
+    private static String currentStreet = "";
     private static volatile List<Alert> alerts = Collections.emptyList();
     private static volatile long alertTime;
 
@@ -53,7 +54,7 @@ public final class NavigationWidget extends SpeedWidget {
             instruction = 0;
             exitNumber = 0;
             turnDistance = "";
-            street = "";
+            nextStreet = "";
             alerts = Collections.emptyList();
         }
     }
@@ -61,7 +62,8 @@ public final class NavigationWidget extends SpeedWidget {
     public static void routeCleared() { routeState(false); }
     public static void turn(int value) { instruction = value; }
     public static void exit(int value) { exitNumber = value; }
-    public static void street(String name) { street = name == null ? "" : name.trim(); }
+    public static void street(String name) { nextStreet = name == null ? "" : name.trim(); }
+    public static void currentStreet(String name) { currentStreet = name == null ? "" : name.trim(); }
 
     public static void distance(String value, String unit) {
         turnDistance = (value + " " + unit).trim();
@@ -135,7 +137,8 @@ public final class NavigationWidget extends SpeedWidget {
         long now = SystemClock.elapsedRealtime();
         List<Alert> selected = new ArrayList<>();
         Set<String> types = new HashSet<>();
-        if (currentFix && now - alertTime <= ALERT_FRESH_MS) {
+        boolean showRoadData = currentFix && engineRunning();
+        if (showRoadData && now - alertTime <= ALERT_FRESH_MS) {
             for (Alert alert : alerts) {
                 if (alert.limit > 0 && limit.equals(Integer.toString(alert.limit))) continue;
                 String group = alert.limit > 0 ? "speed" : alert.type == 3 ? "traffic" : alert.icon;
@@ -143,24 +146,25 @@ public final class NavigationWidget extends SpeedWidget {
                 if (selected.size() == 4) break;
             }
         }
-        int turn = navigating && currentFix ? instruction : 0;
+        boolean showGuidance = !selected.isEmpty();
+        int turn = showGuidance && navigating ? instruction : 0;
         String distance = turn > 0 ? turnDistance : "";
-        String nextStreet = turn > 0 ? street : "";
+        String street = turn > 0 ? nextStreet : showGuidance && !navigating ? currentStreet : "";
         int exit = turn >= 6 && turn <= 15 ? exitNumber : 0;
         maybeSpeak(context, selected, now, units);
         String key = speed + "|" + units + "|" + limit + "|" + status + "|" + usSign + "|" + turn
-                + "|" + distance + "|" + nextStreet + "|" + exit + "|" + selected;
+                + "|" + distance + "|" + street + "|" + exit + "|" + selected;
         if (!force && rendered.equals(key)) return;
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         int layout = context.getResources().getIdentifier("qm_navigation_widget", "layout", context.getPackageName());
         int container = context.getResources().getIdentifier("qm_navigation_display", "id", context.getPackageName());
         if (layout == 0 || container == 0) return;
-        android.graphics.Bitmap bitmap = NavigationWidgetPanel.draw(turn, exit, distance, nextStreet,
-                speed, units, limit, usSign, selected, status);
+        android.graphics.Bitmap bitmap = NavigationWidgetPanel.draw(turn, exit, distance, street,
+                speed, units, limit, usSign, selected);
         StringBuilder description = new StringBuilder();
         if (turn > 0) description.append(NavigationWidgetPanel.direction(turn)).append(' ')
-                .append(distance).append(' ').append(nextStreet).append(". ");
-        else description.append("No active route. ");
+                .append(distance).append(' ').append(street).append(". ");
+        else if (!street.isEmpty()) description.append(street).append(". ");
         description.append("Speed ").append(speed).append(' ').append(units).append(". Speed limit ").append(limit);
         for (Alert alert : selected) description.append(". ").append(alert.title).append(' ').append(formatDistance(alert.meters, units));
         if (!status.isEmpty()) description.append(". ").append(status);
@@ -215,6 +219,7 @@ public final class NavigationWidget extends SpeedWidget {
     }
 
     // Morphe binds these to Waze's guidance setting and native sound queue.
+    private static boolean engineRunning() { return false; }
     private static String soundMode() { return null; }
     private static void queueSpeech(Runnable task) {}
     private static void speak(String text) {}

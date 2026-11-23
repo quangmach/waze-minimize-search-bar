@@ -4,7 +4,6 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.text.TextUtils;
@@ -15,6 +14,10 @@ final class NavigationWidgetPanel {
     private static final int INK = 0xffedf5fa;
     private static final int MUTED = 0xffabbccc;
     private static final int ACCENT = 0xff80dccd;
+    private static final int WIDTH = 700;
+    private static final int HEIGHT = 154;
+    private static final int GUIDANCE_WIDTH = 250;
+    private static final int SPEED_WIDTH = 194;
 
     private final Canvas canvas;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -24,24 +27,30 @@ final class NavigationWidgetPanel {
 
     static Bitmap draw(int turn, int exit, String distance, String street,
                        String speed, String units, String limit, boolean usSign,
-                       List<NavigationWidget.Alert> alerts, String status) {
-        Bitmap bitmap = Bitmap.createBitmap(700, 154, Bitmap.Config.ARGB_8888);
-        NavigationWidgetPanel panel = new NavigationWidgetPanel(new Canvas(bitmap));
-        panel.box(0, 0, 700, 154, 24, 0xf218293b);
-        panel.box(8, 8, 247, 146, 18, 0xff203950);
-        panel.maneuver(turn, exit, distance, street);
-        panel.text(speed, 304, 86, speed.length() > 2 ? 46 : 55, INK, true);
-        panel.text(units, 304, 118, 20, MUTED, false);
-        panel.speedSign(392, 76, 37, limit, usSign);
-        panel.box(442, 20, 444, 134, 1, 0xff456078);
+                       List<NavigationWidget.Alert> alerts) {
+        Bitmap bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        NavigationWidgetPanel panel = new NavigationWidgetPanel(canvas);
+        int guidanceWidth = turn > 0 || !street.isEmpty() ? GUIDANCE_WIDTH : 0;
+        int speedEnd = guidanceWidth + SPEED_WIDTH;
+        int alertWidth = alerts.isEmpty() ? 0 : 20 + 59 * alerts.size();
+        int width = speedEnd + alertWidth;
+        // Transparent pixels keep the launcher's scale and the speed digits stable as sections collapse.
+        canvas.translate((WIDTH - width) * .5f, 0);
+        panel.box(0, 0, width, HEIGHT, 24, 0xf218293b);
+        if (guidanceWidth > 0) {
+            panel.box(8, 8, 247, 146, 18, 0xff203950);
+            panel.maneuver(turn, exit, distance, street);
+        }
+        panel.text(speed, guidanceWidth + 54, 86, speed.length() > 2 ? 46 : 55, INK, true);
+        panel.text(units, guidanceWidth + 54, 118, 20, MUTED, false);
+        panel.speedSign(guidanceWidth + 142, 76, 37, limit, usSign);
 
-        if (alerts.isEmpty()) {
-            panel.text(status.isEmpty() ? "No alerts" : status, 572, 83, 22, MUTED, false);
-        } else {
-            float spacing = 236f / alerts.size();
+        if (!alerts.isEmpty()) {
+            panel.box(speedEnd - 2, 20, speedEnd, 134, 1, 0xff456078);
             for (int index = 0; index < alerts.size(); index++) {
                 NavigationWidget.Alert alert = alerts.get(index);
-                panel.alert(alert, 453 + spacing * (index + .5f), units);
+                panel.alert(alert, speedEnd + 10 + 59 * (index + .5f), units);
             }
         }
         return bitmap;
@@ -49,7 +58,7 @@ final class NavigationWidgetPanel {
 
     private void maneuver(int turn, int exit, String distance, String street) {
         if (turn <= 0) {
-            text("No active route", 128, 84, 24, MUTED, false);
+            fitText(street, 128, 85, 27, 210, INK, true);
             return;
         }
         String arrow;
