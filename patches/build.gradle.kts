@@ -23,6 +23,10 @@ dependencies {
 }
 
 tasks {
+    assemble {
+        dependsOn("buildAndroid")
+    }
+
     register<JavaExec>("generatePatchesList") {
         description = "Build patch with patch list"
 
