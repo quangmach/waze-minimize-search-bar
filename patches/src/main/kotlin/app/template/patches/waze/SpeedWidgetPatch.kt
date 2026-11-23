@@ -5,10 +5,12 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.AppTarget
 import app.morphe.patcher.patch.Compatibility
+import app.morphe.patcher.patch.classDefBy
 import app.morphe.patcher.patch.document
 import app.morphe.patcher.patch.mutableClassDefBy
 import app.morphe.patcher.patch.patch
 import app.morphe.patcher.patch.resourceFile
+import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMutable
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
@@ -22,6 +24,9 @@ private const val LOCATION_LISTENER = "Lcom/waze/location/LocationSensorListener
 private const val WIDGET_PACKAGE = "app.template.extension.extension"
 private const val WIDGET_SERVICE = "Lapp/template/extension/extension/SpeedWidgetService;"
 private const val PROJECTION_AUTHORITY = "androidx.car.app.connection"
+private const val WAZE_CONFIG = "Lcom/waze/config/ConfigValues;"
+private const val WAZE_STRING_CONFIG = "Lcom/waze/config/d;"
+private const val SIGN_STYLE = "CONFIG_VALUE_MAP_SPEEDOMETER_STYLE"
 
 private object WazeWidgetApplication : Fingerprint(
     definingClass = "Lcom/waze/ls;",
@@ -37,10 +42,11 @@ private object WazeWidgetMapResume : Fingerprint(
     returnType = "V",
 )
 
-private object WazeSpeedLimitSign : Fingerprint(
-    definingClass = "Lcom/waze/bz/i;",
-    name = "<init>",
-    parameters = listOf("I", "Ljava/lang/String;", "Z", "I", "Z", "Z", "Z", "Z"),
+private object WazeStringConfigValue : Fingerprint(
+    definingClass = WAZE_STRING_CONFIG,
+    name = "a",
+    parameters = emptyList(),
+    returnType = "Ljava/lang/String;",
 )
 
 private object WazeSpeedUpdate : Fingerprint(
@@ -73,6 +79,23 @@ private object WazeEngineStarted : Fingerprint(
 
 private fun Element.androidAttribute(name: String, value: String) =
     setAttributeNS(ANDROID_NS, "android:$name", value)
+
+private fun MutableClass.bindWidgetMethod(name: String, registers: Int, instructions: String) {
+    val stub = methods.single { it.name == name }
+    val bound = ImmutableMethod(
+        stub.definingClass,
+        stub.name,
+        stub.parameters,
+        stub.returnType,
+        stub.accessFlags,
+        stub.annotations,
+        stub.hiddenApiRestrictions,
+        MutableMethodImplementation(registers),
+    ).toMutable()
+    bound.addInstructionsWithLabels(0, instructions)
+    methods.remove(stub)
+    methods.add(bound)
+}
 
 private val speedWidgetResources = patch {
     execute {
@@ -207,10 +230,6 @@ val speedWidgetPatch = patch(
         WazeWidgetMapResume.method.addInstructions(0, """
             invoke-static/range {p0 .. p0}, Lapp/template/extension/extension/SpeedWidgetProjection;->checkConnection(Landroid/content/Context;)V
         """)
-        val sign = WazeSpeedLimitSign.method
-        sign.addInstructions(0, """
-            invoke-static {p3}, Lapp/template/extension/extension/SpeedWidget;->onWazeLimitSign(Z)V
-        """)
         check(update.implementation!!.registerCount > 6)
         update.addInstructions(0, """
             invoke-virtual/range {p0 .. p0}, ${location.definingClass}->${location.name}()Landroid/location/Location;
@@ -231,18 +250,15 @@ val speedWidgetPatch = patch(
         // Reuse the active engine. For overlapping cold starts, Waze's initializer
         // uses its own atomic gate and shared completion to run the startup only once.
         val service = mutableClassDefBy(WIDGET_SERVICE)
-        val stub = service.methods.single { it.name == "startWazeEngine" }
-        val launch = ImmutableMethod(
-            stub.definingClass,
-            stub.name,
-            stub.parameters,
-            stub.returnType,
-            stub.accessFlags,
-            stub.annotations,
-            stub.hiddenApiRestrictions,
-            MutableMethodImplementation(3),
-        ).toMutable()
-        launch.addInstructionsWithLabels(0, """
+        val configGetter = WazeStringConfigValue.method
+        check(classDefBy(WAZE_CONFIG).fields.any { it.name == SIGN_STYLE && it.type == WAZE_STRING_CONFIG })
+        service.bindWidgetMethod("readWazeSignStyle", 1, """
+            sget-object v0, $WAZE_CONFIG->$SIGN_STYLE:$WAZE_STRING_CONFIG
+            invoke-virtual {v0}, ${configGetter.definingClass}->${configGetter.name}()Ljava/lang/String;
+            move-result-object v0
+            return-object v0
+        """)
+        service.bindWidgetMethod("startWazeEngine", 3, """
             invoke-static {}, ${started.definingClass}->${started.name}()Z
             move-result v0
             if-nez v0, :ready
@@ -256,7 +272,5 @@ val speedWidgetPatch = patch(
             :ready
             return-void
         """)
-        service.methods.remove(stub)
-        service.methods.add(launch)
     }
 }

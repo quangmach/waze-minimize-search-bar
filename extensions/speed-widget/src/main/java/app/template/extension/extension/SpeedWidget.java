@@ -11,16 +11,9 @@ import android.graphics.Bitmap;
 import android.util.Log;
 import android.widget.RemoteViews;
 
-import java.util.Locale;
-
 public final class SpeedWidget extends AppWidgetProvider {
     private static SpeedWidgetDial renderer;
     private static Configuration rendererConfiguration;
-    private static volatile Boolean usLimitSign;
-
-    public static void onWazeLimitSign(boolean useUsSign) {
-        usLimitSign = useUsSign;
-    }
 
     static ComponentName component(Context context) {
         return new ComponentName(context, SpeedWidget.class);
@@ -50,7 +43,7 @@ public final class SpeedWidget extends AppWidgetProvider {
         context.stopService(new Intent(context, SpeedWidgetService.class));
     }
 
-    static void render(Context context, String speed, String unit, String limit, String status) {
+    static void render(Context context, String speed, String unit, String limit, String status, boolean useUsSign) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         int[] widgetIds = manager.getAppWidgetIds(component(context));
         if (widgetIds.length == 0) return;
@@ -62,8 +55,7 @@ public final class SpeedWidget extends AppWidgetProvider {
                 renderer = new SpeedWidgetDial(app);
                 rendererConfiguration = new Configuration(configuration);
             }
-            Boolean sign = usLimitSign;
-            dial = renderer.draw(speed, unit, limit, sign != null ? sign : "US".equals(Locale.getDefault().getCountry()));
+            dial = renderer.draw(speed, unit, limit, useUsSign);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
             Log.w("QmWazeSpeedWidget", "Could not render Waze's speedometer", error);
             return;

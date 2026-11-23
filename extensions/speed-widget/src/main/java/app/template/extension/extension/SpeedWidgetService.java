@@ -111,7 +111,7 @@ public final class SpeedWidgetService extends Service implements LocationListene
 
     static void refresh(Context context) {
         if (running == null) {
-            SpeedWidget.render(context, UNAVAILABLE, defaultUnit(), UNAVAILABLE, SpeedWidgetAuto.idleHint(context));
+            SpeedWidget.render(context, UNAVAILABLE, defaultUnit(), UNAVAILABLE, SpeedWidgetAuto.idleHint(context), false);
         } else {
             running.publish(true);
         }
@@ -235,6 +235,9 @@ public final class SpeedWidgetService extends Service implements LocationListene
     // Morphe inserts the call to Waze's coroutine initializer here.
     private static void startWazeEngine(Application application) {}
 
+    // Morphe binds this to the same regional configuration read by Waze's map.
+    private static String readWazeSignStyle() { return null; }
+
     private static Object newContinuation(Class<?> continuation, Object emptyContext, Application owner) {
         return Proxy.newProxyInstance(continuation.getClassLoader(), new Class<?>[] { continuation },
                 new EngineRequest(emptyContext, owner));
@@ -342,12 +345,21 @@ public final class SpeedWidgetService extends Service implements LocationListene
         String speed = gpsReady && gps.hasSpeed() && gps.getSpeed() >= 0 && Float.isFinite(gps.getSpeed())
                 ? Integer.toString(Math.round(gps.getSpeed() * ("mph".equals(unit) ? 2.2369363f : 3.6f)))
                 : UNAVAILABLE;
+        boolean useUsSign = false;
+        if (currentLimit) {
+            try {
+                useUsSign = "us".equals(readWazeSignStyle());
+            } catch (RuntimeException | LinkageError error) {
+                // The engine may be shutting down. Wait for a fresh limit and configuration.
+                currentLimit = false;
+            }
+        }
         String limit = currentLimit ? Integer.toString(reading.limit) : UNAVAILABLE;
         String status = UNAVAILABLE.equals(speed) ? "Waiting for GPS" : "";
-        String display = speed + "|" + unit + "|" + limit + "|" + status;
+        String display = speed + "|" + unit + "|" + limit + "|" + status + "|" + useUsSign;
         if (force || !display.equals(rendered)) {
             rendered = display;
-            SpeedWidget.render(this, speed, unit, limit, status);
+            SpeedWidget.render(this, speed, unit, limit, status, useUsSign);
         }
     }
 
