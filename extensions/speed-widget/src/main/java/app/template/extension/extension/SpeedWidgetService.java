@@ -111,7 +111,9 @@ public final class SpeedWidgetService extends Service implements LocationListene
 
     static void refresh(Context context) {
         if (running == null) {
-            SpeedWidget.render(context, UNAVAILABLE, defaultUnit(), UNAVAILABLE, SpeedWidgetAuto.idleHint(context), false);
+            String status = SpeedWidgetAuto.idleHint(context);
+            SpeedWidget.render(context, UNAVAILABLE, defaultUnit(), UNAVAILABLE, status, false);
+            NavigationWidget.render(context, UNAVAILABLE, defaultUnit(), UNAVAILABLE, status, false, false, true);
         } else {
             running.publish(true);
         }
@@ -184,7 +186,7 @@ public final class SpeedWidgetService extends Service implements LocationListene
 
     private boolean beginTracking() {
         if (running == this) return true;
-        if (AppWidgetManager.getInstance(this).getAppWidgetIds(SpeedWidget.component(this)).length == 0) {
+        if (!SpeedWidgetAuto.hasWidgets(this)) {
             return false;
         }
         try {
@@ -361,6 +363,7 @@ public final class SpeedWidgetService extends Service implements LocationListene
             rendered = display;
             SpeedWidget.render(this, speed, unit, limit, status, useUsSign);
         }
+        NavigationWidget.render(this, speed, unit, limit, status, useUsSign, gpsReady, force);
     }
 
     private static boolean isFresh(Location fix, long now) {

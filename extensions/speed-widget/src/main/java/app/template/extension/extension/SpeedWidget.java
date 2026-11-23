@@ -11,7 +11,7 @@ import android.graphics.Bitmap;
 import android.util.Log;
 import android.widget.RemoteViews;
 
-public final class SpeedWidget extends AppWidgetProvider {
+public class SpeedWidget extends AppWidgetProvider {
     private static SpeedWidgetDial renderer;
     private static Configuration rendererConfiguration;
 
@@ -20,10 +20,8 @@ public final class SpeedWidget extends AppWidgetProvider {
     }
 
     static boolean isBound(Context context, int id) {
-        for (int bound : AppWidgetManager.getInstance(context).getAppWidgetIds(component(context))) {
-            if (bound == id) return true;
-        }
-        return false;
+        android.appwidget.AppWidgetProviderInfo info = AppWidgetManager.getInstance(context).getAppWidgetInfo(id);
+        return info != null && (component(context).equals(info.provider) || NavigationWidget.component(context).equals(info.provider));
     }
 
     @Override
@@ -39,6 +37,7 @@ public final class SpeedWidget extends AppWidgetProvider {
 
     @Override
     public void onDisabled(Context context) {
+        if (SpeedWidgetAuto.hasWidgets(context)) return;
         SpeedWidgetAuto.removeWatchers(context);
         context.stopService(new Intent(context, SpeedWidgetService.class));
     }
@@ -69,12 +68,16 @@ public final class SpeedWidget extends AppWidgetProvider {
             views.setImageViewBitmap(container, dial);
             views.setContentDescription(container, speedDescription + ". " + limitDescription
                     + (status.isEmpty() ? "." : ". " + status));
-            Intent controls = new Intent(context, SpeedWidgetControls.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
-            views.setOnClickPendingIntent(container, PendingIntent.getActivity(context, id, controls, PendingIntent.FLAG_IMMUTABLE));
+            views.setOnClickPendingIntent(container, controls(context, id));
             manager.updateAppWidget(id, views);
         }
+    }
+
+    static PendingIntent controls(Context context, int id) {
+        Intent controls = new Intent(context, SpeedWidgetControls.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
+        return PendingIntent.getActivity(context, id, controls, PendingIntent.FLAG_IMMUTABLE);
     }
 
     private static int resource(Context context, String type, String name) {

@@ -19,9 +19,9 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import org.w3c.dom.Element
 
-private const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
+internal const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
 private const val LOCATION_LISTENER = "Lcom/waze/location/LocationSensorListener;"
-private const val WIDGET_PACKAGE = "app.template.extension.extension"
+internal const val WIDGET_PACKAGE = "app.template.extension.extension"
 private const val WIDGET_SERVICE = "Lapp/template/extension/extension/SpeedWidgetService;"
 private const val PROJECTION_AUTHORITY = "androidx.car.app.connection"
 private const val WAZE_CONFIG = "Lcom/waze/config/ConfigValues;"
@@ -77,10 +77,10 @@ private object WazeEngineStarted : Fingerprint(
     returnType = "Z",
 )
 
-private fun Element.androidAttribute(name: String, value: String) =
+internal fun Element.androidAttribute(name: String, value: String) =
     setAttributeNS(ANDROID_NS, "android:$name", value)
 
-private fun MutableClass.bindWidgetMethod(name: String, registers: Int, instructions: String) {
+internal fun MutableClass.bindWidgetMethod(name: String, registers: Int, instructions: String) {
     val stub = methods.single { it.name == name }
     val bound = ImmutableMethod(
         stub.definingClass,
@@ -97,19 +97,34 @@ private fun MutableClass.bindWidgetMethod(name: String, registers: Int, instruct
     methods.add(bound)
 }
 
-private val speedWidgetResources = patch {
-    execute {
-        listOf(
-            "layout/qm_speed_widget.xml",
-            "xml/qm_speed_widget_info.xml",
-        ).forEach { name ->
-            val file = resourceFile("res/$name", false)
-            file.parentFile.mkdirs()
-            checkNotNull(WazeSpeedUpdate.javaClass.getResourceAsStream("/speed-widget/$name")).use { input ->
-                file.outputStream().use { output -> input.copyTo(output) }
-            }
-        }
+internal fun Element.addWidgetProvider(className: String, label: String, info: String) {
+    val manifest = ownerDocument
+    appendChild(manifest.createElement("receiver").apply {
+        androidAttribute("name", "$WIDGET_PACKAGE.$className")
+        androidAttribute("exported", "false")
+        androidAttribute("label", label)
+        appendChild(manifest.createElement("intent-filter").apply {
+            appendChild(manifest.createElement("action").apply {
+                androidAttribute("name", "android.appwidget.action.APPWIDGET_UPDATE")
+            })
+        })
+        appendChild(manifest.createElement("meta-data").apply {
+            androidAttribute("name", "android.appwidget.provider")
+            androidAttribute("resource", "@xml/$info")
+        })
+    })
+}
 
+internal fun copyWidgetResource(name: String) {
+    val file = resourceFile("res/$name", false)
+    file.parentFile.mkdirs()
+    checkNotNull(WazeSpeedUpdate.javaClass.getResourceAsStream("/speed-widget/$name")).use { input ->
+        file.outputStream().use { output -> input.copyTo(output) }
+    }
+}
+
+private val widgetSupportResources = patch {
+    execute {
         document("AndroidManifest.xml").use { manifest ->
             val application = manifest.getElementsByTagName("application").item(0) as Element
             val queries = (manifest.getElementsByTagName("queries").item(0) as? Element)
@@ -144,20 +159,6 @@ private val speedWidgetResources = patch {
                 }
             }
 
-            application.appendChild(manifest.createElement("receiver").apply {
-                androidAttribute("name", "$WIDGET_PACKAGE.SpeedWidget")
-                androidAttribute("exported", "false")
-                androidAttribute("label", "Waze Speedometer")
-                appendChild(manifest.createElement("intent-filter").apply {
-                    appendChild(manifest.createElement("action").apply {
-                        androidAttribute("name", "android.appwidget.action.APPWIDGET_UPDATE")
-                    })
-                })
-                appendChild(manifest.createElement("meta-data").apply {
-                    androidAttribute("name", "android.appwidget.provider")
-                    androidAttribute("resource", "@xml/qm_speed_widget_info")
-                })
-            })
             application.appendChild(manifest.createElement("service").apply {
                 androidAttribute("name", "$WIDGET_PACKAGE.SpeedWidgetService")
                 androidAttribute("exported", "false")
@@ -202,17 +203,9 @@ private val speedWidgetResources = patch {
     }
 }
 
-@Suppress("unused")
-val speedWidgetPatch = patch(
-    name = "Add Speedometer/Speed Limit Widget",
-    description = "Shows Waze’s speedometer and road-limit badge on the home screen with automatic trip detection.",
-    default = false,
-) {
-    compatibleWith(
-        Compatibility(name = "Waze", packageName = "com.waze", targets = listOf(AppTarget("5.27.5.0"))),
-    )
+internal val widgetSupport = patch {
     extendWith("extensions/speed-widget.mpe")
-    dependsOn(speedWidgetResources)
+    dependsOn(widgetSupportResources)
     execute {
         val location = WazeLastLocation.method
         val update = WazeSpeedUpdate.method
@@ -272,5 +265,25 @@ val speedWidgetPatch = patch(
             :ready
             return-void
         """)
+    }
+}
+
+@Suppress("unused")
+val speedWidgetPatch = patch(
+    name = "Add Speedometer/Speed Limit Widget",
+    description = "Shows Waze’s speedometer and road-limit badge on the home screen with automatic trip detection.",
+    default = false,
+) {
+    compatibleWith(
+        Compatibility(name = "Waze", packageName = "com.waze", targets = listOf(AppTarget("5.27.5.0"))),
+    )
+    dependsOn(widgetSupport)
+    execute {
+        copyWidgetResource("layout/qm_speed_widget.xml")
+        copyWidgetResource("xml/qm_speed_widget_info.xml")
+        document("AndroidManifest.xml").use {
+            (it.getElementsByTagName("application").item(0) as Element)
+                .addWidgetProvider("SpeedWidget", "Waze Speedometer", "qm_speed_widget_info")
+        }
     }
 }

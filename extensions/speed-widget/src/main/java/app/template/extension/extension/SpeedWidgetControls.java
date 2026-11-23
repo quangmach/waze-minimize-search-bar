@@ -33,12 +33,14 @@ public final class SpeedWidgetControls extends Activity {
         }
         boolean running = SpeedWidgetService.isTracking();
         boolean needsAutoAccess = !running && SpeedWidgetAuto.enabled(this) && !SpeedWidgetAuto.available(this);
+        boolean navigation = NavigationWidget.component(this).equals(
+                AppWidgetManager.getInstance(this).getAppWidgetInfo(widgetId).provider);
         new AlertDialog.Builder(this)
-                .setTitle("Waze Speedometer")
+                .setTitle(navigation ? "Waze Navigation & Alerts" : "Waze Speedometer")
                 .setMessage(running
                         ? "GPS speed is being tracked for the launcher widget."
                         : needsAutoAccess ? "Allow permissions to start tracking automatically on trips."
-                        : "Use your location for live GPS speed and available Waze speed limits.")
+                        : "Start live updates for the launcher widget.")
                 .setPositiveButton(running ? "Stop" : needsAutoAccess ? "Allow permissions" : "Start", (dialog, button) -> {
                     if (running) {
                         startService(new Intent(this, SpeedWidgetService.class).setAction(SpeedWidgetService.STOP));

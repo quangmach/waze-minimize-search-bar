@@ -1,5 +1,6 @@
 # The patch references this package directly from Waze's manifest and bytecode.
 -keep class app.template.extension.extension.SpeedWidget** { *; }
+-keep class app.template.extension.extension.NavigationWidget** { *; }
 
 # Waze ships its own Google Play services client. Keep this extension's client
 # private so it can coexist with the app's optimized classes.

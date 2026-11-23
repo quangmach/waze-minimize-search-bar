@@ -44,7 +44,8 @@ public final class SpeedWidgetAuto extends BroadcastReceiver {
     }
 
     static boolean hasWidgets(Context context) {
-        return AppWidgetManager.getInstance(context).getAppWidgetIds(SpeedWidget.component(context)).length != 0;
+        return AppWidgetManager.getInstance(context).getAppWidgetIds(SpeedWidget.component(context)).length != 0
+                || NavigationWidget.ids(context).length != 0;
     }
 
     static boolean available(Context context) {
