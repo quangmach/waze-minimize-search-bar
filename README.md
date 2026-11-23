@@ -4,19 +4,15 @@ A Morphe patch for Waze Mod that hides the search sheet when you tap the map, an
 
 **Move & Resize Speedometer** is an experimental, optional patch. Long-press the speedometer, keep holding, and drag it. While holding, add a second finger and pinch to resize. The phone and secondary displays keep separate portrait and landscape placements. This targets Waze's named speedometer view rather than an obfuscated version-specific class; Waze updates may still change that view or its layout.
 
-**Add Speedometer/Speed Limit Widget** adds a circular **Waze Speedometer** widget to the Android home screen for original Waze 5.27.5.0. In manual mode, tracking starts when you add the widget and allow precise location. Removing the active widget or turning off the screen stops manual tracking. Tap the dial to start again or stop. Android’s widget provider API reports placement and removal, so switching apps or home-screen pages leaves the current tracking state in place.
+**Add navigation and alert widget** adds a **Waze Navigation & Alerts** home-screen widget for original Waze 5.27.5.0. It shows current speed and the posted maximum speed. When upcoming alerts are available, the panel expands to show up to four alerts and the next maneuver on an active route, or the current street if Waze knows it. It shares the active Waze engine and stops an engine it started for itself when tracking ends and there is no independent Waze session. Upcoming warnings can be spoken through Waze’s audio when its guidance mode permits alerts.
 
-The widget renders Waze's own speedometer layout and speed-limit sign. It shows GPS speed while the Waze map is closed and attaches the sign when Waze returns a posted limit. It shares the active Waze engine and stops an engine it started for itself when tracking ends and there is no independent Waze session. The badge was verified with sample readings. Live posted limits are still unverified on the emulator.
-
-Automatic trip tracking is on by default. Adding the widget asks for any missing permissions and then waits for a trip. For an existing widget that needs access, tap the dial and choose **Allow permissions**. You can turn off automatic tracking from the widget controls.
+Automatic trip tracking is on by default. Adding the widget asks for any missing permissions and then waits for a trip. For an existing widget that needs access, tap it and choose **Allow permissions**. You can turn off automatic tracking from the widget controls.
 
 An Android Auto projection session or a paired Bluetooth device that reports Car Audio or a Bluetooth LE motorized-vehicle type can start tracking. Android Auto's event is available while Waze's process is running. If Android has stopped that process or blocks a background start, Bluetooth and Google Play services' **In vehicle** detection can still start tracking. A Bluetooth disconnection has a 15-second grace period. Automatic trips continue when the phone is asleep or locked. The screen-off rule for manual tracking follows Android's device-wide sleep state.
 
 Grant **Nearby devices** for Bluetooth detection and **Physical activity** for the motion fallback. In Waze's Location permissions, enable precise location and choose **Allow all the time** so a trip can start while the app is in the background. Waze already declares Bluetooth connection and background location permissions. The patch adds the Physical activity permission.
 
 ## Add to Morphe
-
-**Add navigation and alert widget** adds a separate **Waze Navigation & Alerts** home-screen widget for original Waze 5.27.5.0. It shows current speed and the posted maximum speed. When upcoming alerts are available, the panel expands to show up to four alerts and the next maneuver on an active route, or the current street if Waze knows it. The widgets share one tracking service and Waze engine. Upcoming warnings can be spoken through Waze’s audio when its guidance mode permits alerts.
 
 In Morphe Manager, open **Sources**, add a source, and enter:
 

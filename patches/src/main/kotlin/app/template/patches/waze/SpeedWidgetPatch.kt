@@ -3,8 +3,6 @@ package app.template.patches.waze
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
-import app.morphe.patcher.patch.AppTarget
-import app.morphe.patcher.patch.Compatibility
 import app.morphe.patcher.patch.classDefBy
 import app.morphe.patcher.patch.document
 import app.morphe.patcher.patch.mutableClassDefBy
@@ -265,25 +263,5 @@ internal val widgetSupport = patch {
             :ready
             return-void
         """)
-    }
-}
-
-@Suppress("unused")
-val speedWidgetPatch = patch(
-    name = "Add Speedometer/Speed Limit Widget",
-    description = "Shows Waze’s speedometer and road-limit badge on the home screen with automatic trip detection.",
-    default = false,
-) {
-    compatibleWith(
-        Compatibility(name = "Waze", packageName = "com.waze", targets = listOf(AppTarget("5.27.5.0"))),
-    )
-    dependsOn(widgetSupport)
-    execute {
-        copyWidgetResource("layout/qm_speed_widget.xml")
-        copyWidgetResource("xml/qm_speed_widget_info.xml")
-        document("AndroidManifest.xml").use {
-            (it.getElementsByTagName("application").item(0) as Element)
-                .addWidgetProvider("SpeedWidget", "Waze Speedometer", "qm_speed_widget_info")
-        }
     }
 }
