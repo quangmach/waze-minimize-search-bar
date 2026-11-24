@@ -26,6 +26,11 @@ public final class MovableSpeedometer {
     private static final long REFRESH_MS = 100;
     private MovableSpeedometer() {}
 
+    public static boolean showInMapMode(Enum<?> mode) {
+        // Waze switches from tracking to Other when a map gesture breaks camera follow.
+        return mode != null && ("TrackingUserLocation".equals(mode.name()) || "Other".equals(mode.name()));
+    }
+
     public static void install(Activity activity) {
         activity.getWindow().getDecorView().post(() -> attach(activity));
     }
