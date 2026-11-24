@@ -18,8 +18,8 @@ private object MainActivityResume : Fingerprint(
 
 @Suppress("unused")
 val movableSpeedometerPatch = patch(
-    name = "Move & Resize Speedometer",
-    description = "Long-press and drag the speedometer; pinch to resize it.",
+    name = "Advanced Speedometer",
+    description = "Move and resize the in-app speedometer. Double-tap to swap the speedometer and speed limit.",
     default = false,
 ) {
     compatibleWith(

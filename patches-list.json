@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.3.25",
+  "version": "1.3.26",
   "patches": [
     {
       "name": "Add navigation and alert widget",
@@ -30,8 +30,8 @@
       "options": []
     },
     {
-      "name": "Move & Resize Speedometer",
-      "description": "Long-press and drag the speedometer; pinch to resize it.",
+      "name": "Advanced Speedometer",
+      "description": "Move and resize the in-app speedometer. Double-tap to swap the speedometer and speed limit.",
       "default": false,
       "category": null,
       "compatiblePackages": [

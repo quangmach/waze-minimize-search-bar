@@ -19,9 +19,10 @@ import android.view.Window;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 
-/** Gesture handling is attached to the window so translated views remain draggable. */
+/** Window gestures keep the speedometer draggable after it moves to the overlay. */
 public final class MovableSpeedometer {
     private static final String PREFS = "morphe_speedometer_position";
+    private static final String LIMIT_PRIMARY = "limit_primary";
     private static final long REFRESH_MS = 100;
     private MovableSpeedometer() {}
 
@@ -54,8 +55,11 @@ public final class MovableSpeedometer {
         final Window.Callback delegate;
         final Handler handler = new Handler(Looper.getMainLooper());
         final SharedPreferences prefs;
+        final int touchSlop, doubleTapSlop;
         View target;
+        SpeedometerFaces faces;
         boolean armed, capturing, editing, moved, anchored;
+        boolean limitPrimary;
         float anchorX, anchorY;
         float x, y, scale = 1f;
         String placementKey;
@@ -64,14 +68,14 @@ public final class MovableSpeedometer {
         final int[] targetLocation = new int[2];
         final int[] decorLocation = new int[2];
         float startX, startY, lastX, lastY, lastSpan;
+        float tapX, tapY;
+        long lastTapUp = -1;
         final Runnable activate = () -> { if (armed && target != null) editing = true; };
         final Runnable refresh = new Runnable() {
             @Override public void run() {
                 if (overlay == null) return;
-                if (!target.isShown() || target.getWindowVisibility() != View.VISIBLE) {
-                    removeOverlay();
-                    return;
-                }
+                updateOverlay();
+                if (overlay == null) return;
                 overlay.invalidateSelf();
                 handler.postDelayed(this, REFRESH_MS);
             }
@@ -80,6 +84,10 @@ public final class MovableSpeedometer {
         Controls(Activity activity, Window.Callback delegate) {
             this.activity = activity; this.delegate = delegate;
             prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            limitPrimary = prefs.getBoolean(LIMIT_PRIMARY, false);
+            ViewConfiguration config = ViewConfiguration.get(activity);
+            touchSlop = config.getScaledTouchSlop();
+            doubleTapSlop = config.getScaledDoubleTapSlop();
         }
 
         void findTarget() {
@@ -89,7 +97,9 @@ public final class MovableSpeedometer {
             handler.removeCallbacks(activate);
             removeOverlay();
             armed = editing = moved = false;
+            lastTapUp = -1;
             target = found;
+            faces = target == null ? null : new SpeedometerFaces(target);
             placementKey = null;
             if (target == null) return;
             android.util.Log.i("QM-Speedometer", "Found speedometer view");
@@ -106,14 +116,16 @@ public final class MovableSpeedometer {
 
         private void updateOverlay() {
             View decor = activity.getWindow().getDecorView();
-            if ((!anchored && !moved) || !target.isShown() || decor.getWindowVisibility() != View.VISIBLE) {
+            boolean swapped = limitPrimary && faces.canSwap();
+            if ((!anchored && !moved && !swapped) || !target.isShown() || decor.getWindowVisibility() != View.VISIBLE) {
                 removeOverlay();
                 return;
             }
+            if (!anchored && !moved) nativePosition(decor);
             // Draw the moved dial above Waze while its source keeps its original layout and bounds.
             if (overlay == null) {
                 originalAlpha = Build.VERSION.SDK_INT >= 29 ? target.getTransitionAlpha() : target.getAlpha();
-                overlay = new DialOverlay(target, originalAlpha);
+                overlay = new DialOverlay(target, faces, originalAlpha);
                 decor.getOverlay().add(overlay);
                 if (Build.VERSION.SDK_INT >= 29) target.setTransitionAlpha(0f);
                 else target.setAlpha(0f);
@@ -124,6 +136,7 @@ public final class MovableSpeedometer {
             x = clamp(x, decor.getWidth() - width);
             y = clamp(y, decor.getHeight() - height);
             overlay.setBounds(Math.round(x), Math.round(y), Math.round(x + width), Math.round(y + height));
+            overlay.setSwapped(swapped);
         }
 
         private void restore(View decor, String key) {
@@ -179,6 +192,7 @@ public final class MovableSpeedometer {
             if (!key.equals(placementKey)) {
                 handler.removeCallbacks(activate);
                 armed = editing = moved = false;
+                lastTapUp = -1;
                 restore(decor, key);
             }
             if (anchored && !editing) {
@@ -209,15 +223,23 @@ public final class MovableSpeedometer {
                     armed = inside(event); capturing = armed; editing = false; moved = false; lastSpan = 0;
                     startX = lastX = event.getRawX(); startY = lastY = event.getRawY();
                     if (armed) handler.postDelayed(activate, ViewConfiguration.getLongPressTimeout());
+                    else lastTapUp = -1;
                     return capturing;
                 case MotionEvent.ACTION_POINTER_DOWN:
                     if (editing && event.getPointerCount() >= 2) lastSpan = span(event);
+                    else {
+                        armed = false;
+                        handler.removeCallbacks(activate);
+                    }
+                    lastTapUp = -1;
                     return capturing;
                 case MotionEvent.ACTION_MOVE:
                     if (!editing) {
-                        float dx = event.getRawX() - startX, dy = event.getRawY() - startY;
-                        int slop = ViewConfiguration.get(activity).getScaledTouchSlop();
-                        if (dx * dx + dy * dy > slop * slop) { armed = false; handler.removeCallbacks(activate); }
+                        if (!near(event, startX, startY, touchSlop)) {
+                            armed = false;
+                            lastTapUp = -1;
+                            handler.removeCallbacks(activate);
+                        }
                         return capturing;
                     }
                     View decor = activity.getWindow().getDecorView();
@@ -241,18 +263,51 @@ public final class MovableSpeedometer {
                     lastSpan = 0; lastX = event.getRawX(); lastY = event.getRawY(); return capturing;
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
-                    handler.removeCallbacks(activate); armed = false;
+                    handler.removeCallbacks(activate);
                     boolean consumed = capturing;
-                    if (event.getActionMasked() == MotionEvent.ACTION_UP && editing && moved && placementKey != null) {
-                        rememberPosition(activity.getWindow().getDecorView());
-                        prefs.edit().putFloat(placementKey + "scale", scale)
-                                .putFloat(placementKey + "anchor_x", anchorX)
-                                .putFloat(placementKey + "anchor_y", anchorY).apply();
+                    if (event.getActionMasked() == MotionEvent.ACTION_UP && capturing) {
+                        if (editing && moved && placementKey != null) {
+                            rememberPosition(activity.getWindow().getDecorView());
+                            prefs.edit().putFloat(placementKey + "scale", scale)
+                                    .putFloat(placementKey + "anchor_x", anchorX)
+                                    .putFloat(placementKey + "anchor_y", anchorY).apply();
+                            lastTapUp = -1;
+                        } else if (armed && !editing && near(event, startX, startY, touchSlop)
+                                && event.getEventTime() - event.getDownTime() < ViewConfiguration.getLongPressTimeout()) {
+                            tap(event);
+                        } else {
+                            lastTapUp = -1;
+                        }
+                    } else {
+                        lastTapUp = -1;
                     }
-                    editing = moved = capturing = false;
+                    armed = editing = moved = capturing = false;
                     return consumed;
                 default: return capturing;
             }
+        }
+
+        private void tap(MotionEvent event) {
+            long elapsed = event.getDownTime() - lastTapUp;
+            if (lastTapUp >= 0 && elapsed >= 0 && elapsed <= ViewConfiguration.getDoubleTapTimeout()
+                    && near(event, tapX, tapY, doubleTapSlop)) {
+                lastTapUp = -1;
+                if (faces != null && faces.canSwap()) {
+                    limitPrimary = !limitPrimary;
+                    prefs.edit().putBoolean(LIMIT_PRIMARY, limitPrimary).apply();
+                    updateOverlay();
+                }
+                return;
+            }
+            tapX = event.getRawX();
+            tapY = event.getRawY();
+            lastTapUp = event.getEventTime();
+        }
+
+        private static boolean near(MotionEvent event, float x, float y, int slop) {
+            float dx = event.getRawX() - x;
+            float dy = event.getRawY() - y;
+            return dx * dx + dy * dy <= slop * slop;
         }
 
         float span(MotionEvent event) {
@@ -268,11 +323,20 @@ public final class MovableSpeedometer {
 
     private static final class DialOverlay extends Drawable {
         private final View source;
+        private final SpeedometerFaces faces;
         private final float initialAlpha;
+        private boolean swapped;
 
-        DialOverlay(View source, float initialAlpha) {
+        DialOverlay(View source, SpeedometerFaces faces, float initialAlpha) {
             this.source = source;
+            this.faces = faces;
             this.initialAlpha = initialAlpha;
+        }
+
+        void setSwapped(boolean swapped) {
+            if (this.swapped == swapped) return;
+            this.swapped = swapped;
+            invalidateSelf();
         }
 
         @Override public void draw(Canvas canvas) {
@@ -284,7 +348,8 @@ public final class MovableSpeedometer {
             canvas.translate(bounds.left, bounds.top);
             canvas.scale((float) bounds.width() / source.getWidth(), (float) bounds.height() / source.getHeight());
             if (alpha < 1f) canvas.saveLayerAlpha(0, 0, source.getWidth(), source.getHeight(), Math.round(alpha * 255));
-            source.draw(canvas);
+            if (swapped && faces.canSwap()) faces.drawSwapped(canvas);
+            else source.draw(canvas);
             canvas.restoreToCount(save);
         }
 
