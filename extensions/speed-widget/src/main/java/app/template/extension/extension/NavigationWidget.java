@@ -146,7 +146,7 @@ public final class NavigationWidget extends SpeedWidget {
                 if (selected.size() == 4) break;
             }
         }
-        boolean showGuidance = !selected.isEmpty();
+        boolean showGuidance = showRoadData;
         int turn = showGuidance && navigating ? instruction : 0;
         String distance = turn > 0 ? turnDistance : "";
         String street = turn > 0 ? nextStreet : showGuidance && !navigating ? currentStreet : "";

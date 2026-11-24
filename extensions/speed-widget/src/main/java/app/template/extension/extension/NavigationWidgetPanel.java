@@ -31,17 +31,12 @@ final class NavigationWidgetPanel {
         Bitmap bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         NavigationWidgetPanel panel = new NavigationWidgetPanel(canvas);
-        int guidanceWidth = turn > 0 || !street.isEmpty() ? GUIDANCE_WIDTH : 0;
+        int guidanceWidth = GUIDANCE_WIDTH;
         int speedEnd = guidanceWidth + SPEED_WIDTH;
-        int alertWidth = alerts.isEmpty() ? 0 : 20 + 59 * alerts.size();
-        int width = speedEnd + alertWidth;
-        // Transparent pixels keep the launcher's scale and the speed digits stable as sections collapse.
-        canvas.translate((WIDTH - width) * .5f, 0);
-        panel.box(0, 0, width, HEIGHT, 24, 0xf218293b);
-        if (guidanceWidth > 0) {
-            panel.box(8, 8, 247, 146, 18, 0xff203950);
-            panel.maneuver(turn, exit, distance, street);
-        }
+        // Keep every section in the same place, even when its data is unavailable.
+        panel.box(0, 0, WIDTH, HEIGHT, 24, 0xf218293b);
+        panel.box(8, 8, 247, 146, 18, 0xff203950);
+        panel.maneuver(turn, exit, distance, street);
         panel.text(speed, guidanceWidth + 54, 86, speed.length() > 2 ? 46 : 55, INK, true);
         panel.text(units, guidanceWidth + 54, 118, 20, MUTED, false);
         panel.speedSign(guidanceWidth + 142, 76, 37, limit, usSign);
