@@ -15,6 +15,8 @@ import android.view.Display;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Window;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
@@ -49,6 +51,10 @@ public final class MovableSpeedometer {
             View decor = window.getDecorView();
             decor.getViewTreeObserver().addOnGlobalLayoutListener(controls::findTarget);
             decor.getViewTreeObserver().addOnPreDrawListener(controls::stabilizePosition);
+            decor.getViewTreeObserver().addOnWindowFocusChangeListener(focused -> {
+                if (focused) decor.invalidate();
+                else controls.suspendOverlay();
+            });
             controls.findTarget();
         } catch (RuntimeException error) {
             android.util.Log.w("QM-Speedometer", "Could not install speedometer controls", error);
@@ -62,6 +68,8 @@ public final class MovableSpeedometer {
         final SharedPreferences prefs;
         final int touchSlop, doubleTapSlop;
         View target;
+        View overlayHost;
+        ViewGroup panelContainer;
         SpeedometerFaces faces;
         boolean armed, capturing, editing, moved, anchored;
         boolean limitPrimary;
@@ -72,6 +80,7 @@ public final class MovableSpeedometer {
         float originalAlpha = 1f;
         final int[] targetLocation = new int[2];
         final int[] decorLocation = new int[2];
+        final int[] hostLocation = new int[2];
         float startX, startY, lastX, lastY, lastSpan;
         float tapX, tapY;
         long lastTapUp = -1;
@@ -96,24 +105,55 @@ public final class MovableSpeedometer {
         }
 
         void findTarget() {
-            int id = activity.getResources().getIdentifier("Speedometer", "id", activity.getPackageName());
-            View found = id == 0 ? null : activity.findViewById(id);
+            View found = namedView("Speedometer");
             if (found == target) return;
-            handler.removeCallbacks(activate);
-            removeOverlay();
-            armed = editing = moved = false;
-            lastTapUp = -1;
+            suspendOverlay();
             target = found;
             faces = target == null ? null : new SpeedometerFaces(target);
+            View mapContent = namedView("mainContentCompose");
+            overlayHost = contains(mapContent, target) ? mapContent : activity.getWindow().getDecorView();
+            View panel = namedView("mainContent");
+            panelContainer = panel instanceof ViewGroup && !contains(panel, target) ? (ViewGroup) panel : null;
             placementKey = null;
             if (target == null) return;
             android.util.Log.i("QM-Speedometer", "Found speedometer view");
         }
 
+        private View namedView(String name) {
+            int id = activity.getResources().getIdentifier(name, "id", activity.getPackageName());
+            return id == 0 ? null : activity.findViewById(id);
+        }
+
+        private static boolean contains(View ancestor, View child) {
+            if (ancestor == null || child == null) return false;
+            for (ViewParent parent = child.getParent(); parent instanceof View; parent = parent.getParent()) {
+                if (parent == ancestor) return true;
+            }
+            return false;
+        }
+
+        private boolean mapAcceptsInput() {
+            if (!activity.hasWindowFocus()) return false;
+            if (panelContainer != null && panelContainer.isShown()) {
+                for (int i = 0; i < panelContainer.getChildCount(); i++) {
+                    View panel = panelContainer.getChildAt(i);
+                    if (panel.isShown() && panel.getWidth() > 0 && panel.getHeight() > 0) return false;
+                }
+            }
+            return true;
+        }
+
+        private void suspendOverlay() {
+            handler.removeCallbacks(activate);
+            armed = editing = moved = false;
+            lastTapUp = -1;
+            removeOverlay();
+        }
+
         private void removeOverlay() {
             if (overlay == null) return;
             handler.removeCallbacks(refresh);
-            activity.getWindow().getDecorView().getOverlay().remove(overlay);
+            overlayHost.getOverlay().remove(overlay);
             if (Build.VERSION.SDK_INT >= 29) target.setTransitionAlpha(originalAlpha);
             else target.setAlpha(originalAlpha);
             overlay = null;
@@ -121,17 +161,21 @@ public final class MovableSpeedometer {
 
         private void updateOverlay() {
             View decor = activity.getWindow().getDecorView();
+            if (!mapAcceptsInput()) {
+                suspendOverlay();
+                return;
+            }
             boolean swapped = limitPrimary && faces.canSwap();
             if ((!anchored && !moved && !swapped) || !target.isShown() || decor.getWindowVisibility() != View.VISIBLE) {
                 removeOverlay();
                 return;
             }
             if (!anchored && !moved) nativePosition(decor);
-            // Draw the moved dial above Waze while its source keeps its original layout and bounds.
+            // Keep the moved dial in the map layer, below any panels shown over it.
             if (overlay == null) {
                 originalAlpha = Build.VERSION.SDK_INT >= 29 ? target.getTransitionAlpha() : target.getAlpha();
                 overlay = new DialOverlay(target, faces, originalAlpha);
-                decor.getOverlay().add(overlay);
+                overlayHost.getOverlay().add(overlay);
                 if (Build.VERSION.SDK_INT >= 29) target.setTransitionAlpha(0f);
                 else target.setAlpha(0f);
                 handler.postDelayed(refresh, REFRESH_MS);
@@ -140,7 +184,12 @@ public final class MovableSpeedometer {
             float height = target.getHeight() * scale;
             x = clamp(x, decor.getWidth() - width);
             y = clamp(y, decor.getHeight() - height);
-            overlay.setBounds(Math.round(x), Math.round(y), Math.round(x + width), Math.round(y + height));
+            decor.getLocationOnScreen(decorLocation);
+            overlayHost.getLocationOnScreen(hostLocation);
+            float hostX = x + decorLocation[0] - hostLocation[0];
+            float hostY = y + decorLocation[1] - hostLocation[1];
+            overlay.setBounds(Math.round(hostX), Math.round(hostY),
+                    Math.round(hostX + width), Math.round(hostY + height));
             overlay.setSwapped(swapped);
         }
 
@@ -210,11 +259,11 @@ public final class MovableSpeedometer {
 
         boolean inside(MotionEvent event) {
             findTarget();
-            if (target == null || !target.isShown()) return false;
+            if (target == null || !target.isShown() || !mapAcceptsInput()) return false;
             float touchX = event.getRawX(), touchY = event.getRawY();
             if (overlay != null) {
-                activity.getWindow().getDecorView().getLocationOnScreen(decorLocation);
-                return overlay.getBounds().contains((int) (touchX - decorLocation[0]), (int) (touchY - decorLocation[1]));
+                overlayHost.getLocationOnScreen(hostLocation);
+                return overlay.getBounds().contains((int) (touchX - hostLocation[0]), (int) (touchY - hostLocation[1]));
             }
             target.getLocationOnScreen(targetLocation);
             return touchX >= targetLocation[0] && touchY >= targetLocation[1]
