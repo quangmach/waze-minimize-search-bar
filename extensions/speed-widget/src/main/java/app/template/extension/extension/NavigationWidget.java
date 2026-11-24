@@ -159,7 +159,7 @@ public final class NavigationWidget extends SpeedWidget {
         int layout = context.getResources().getIdentifier("qm_navigation_widget", "layout", context.getPackageName());
         int container = context.getResources().getIdentifier("qm_navigation_display", "id", context.getPackageName());
         if (layout == 0 || container == 0) return;
-        android.graphics.Bitmap bitmap = NavigationWidgetPanel.draw(turn, exit, distance, street,
+        android.graphics.Bitmap bitmap = NavigationWidgetPanel.draw(context, turn, exit, distance, street,
                 speed, units, limit, usSign, selected);
         StringBuilder description = new StringBuilder();
         if (turn > 0) description.append(NavigationWidgetPanel.direction(turn)).append(' ')

@@ -1,5 +1,6 @@
 package app.template.extension.extension;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -11,6 +12,7 @@ import android.text.TextUtils;
 import java.util.List;
 
 final class NavigationWidgetPanel {
+    private static final String DASH = "—";
     private static final int INK = 0xffffffff;
     private static final int MUTED = 0xffaeb4ba;
     private static final int ACCENT = 0xff46c9ee;
@@ -25,7 +27,7 @@ final class NavigationWidgetPanel {
 
     private NavigationWidgetPanel(Canvas canvas) { this.canvas = canvas; }
 
-    static Bitmap draw(int turn, int exit, String distance, String street,
+    static Bitmap draw(Context context, int turn, int exit, String distance, String street,
                        String speed, String units, String limit, boolean usSign,
                        List<NavigationWidget.Alert> alerts) {
         Bitmap bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888);
@@ -38,15 +40,21 @@ final class NavigationWidgetPanel {
         panel.box(guidanceWidth - 1, 47, guidanceWidth + 1, 123, 0, 0x80ffffff);
         panel.box(speedEnd - 1, 47, speedEnd + 1, 123, 0, 0x80ffffff);
         panel.maneuver(turn, exit, distance, street);
-        panel.text(speed, guidanceWidth + 66, 89, speed.length() > 2 ? 50 : 58, INK, true);
+        String displayedSpeed = DASH.equals(speed) ? "0" : speed;
+        panel.text(displayedSpeed, guidanceWidth + 66, 89,
+                displayedSpeed.length() > 2 ? 50 : 58, INK, true);
         panel.text(units, guidanceWidth + 66, 124, 20, MUTED, false);
         panel.speedSign(guidanceWidth + 185, 85, 43, limit, usSign);
 
-        if (!alerts.isEmpty()) {
+        float alertStart = speedEnd + 5;
+        float alertWidth = WIDTH - alertStart - 10;
+        if (alerts.isEmpty()) {
+            panel.text(DASH, alertStart + alertWidth / 2, 94, 27, MUTED, true);
+        } else {
+            float cellWidth = alertWidth / alerts.size();
             for (int index = 0; index < alerts.size(); index++) {
                 NavigationWidget.Alert alert = alerts.get(index);
-                float cellWidth = 135f / alerts.size();
-                panel.alert(alert, speedEnd + 5 + cellWidth * (index + .5f), units,
+                panel.alert(context, alert, alertStart + cellWidth * (index + .5f), units, usSign,
                         Math.min(1f, cellWidth / 55f));
             }
         }
@@ -55,7 +63,8 @@ final class NavigationWidgetPanel {
 
     private void maneuver(int turn, int exit, String distance, String street) {
         if (turn <= 0) {
-            fitText(street, 140, 94, 27, 220, INK, true);
+            fitText(street.isEmpty() ? DASH : street, 140, 94, 27, 220,
+                    street.isEmpty() ? MUTED : INK, true);
             return;
         }
         String arrow;
@@ -90,29 +99,25 @@ final class NavigationWidgetPanel {
         }
     }
 
-    private void alert(NavigationWidget.Alert alert, float x, String units, float scale) {
+    private void alert(Context context, NavigationWidget.Alert alert, float x, String units,
+                       boolean usSign, float scale) {
         canvas.save();
         canvas.scale(scale, scale, x, 85);
-        if (alert.limit > 0) {
-            speedSign(x, 63, 21, Integer.toString(alert.limit), false);
+        Bitmap icon = NavigationWidgetIcons.alert(context, alert, usSign);
+        if (icon != null) {
+            float size = 52f / Math.max(icon.getWidth(), icon.getHeight());
+            float halfWidth = icon.getWidth() * size / 2f;
+            float halfHeight = icon.getHeight() * size / 2f;
+            paint.setColor(Color.WHITE);
+            paint.setFilterBitmap(true);
+            canvas.drawBitmap(icon, null,
+                    new RectF(x - halfWidth, 67 - halfHeight, x + halfWidth, 67 + halfHeight), paint);
+        } else if (alert.limit > 0) {
+            speedSign(x, 67, 21, Integer.toString(alert.limit), usSign);
         } else {
-            circle(x, 63, 22, 0xff2f4d64);
-            if (alert.type == 10) {
-                box(x - 14, 55, x + 14, 72, 4, ACCENT);
-                box(x - 7, 51, x + 6, 58, 2, ACCENT);
-                circle(x, 63, 5, 0xff2f4d64);
-            } else {
-                String symbol;
-                switch (alert.type) {
-                    case 1: symbol = "P"; break;
-                    case 3: symbol = "≋"; break;
-                    case 12: symbol = "×"; break;
-                    default: symbol = "!"; break;
-                }
-                text(symbol, x, 71, 25, ACCENT, true);
-            }
+            text("!", x, 77, 27, INK, true);
         }
-        text(NavigationWidget.formatDistance(alert.meters, units), x, 113, 17, INK, true);
+        text(NavigationWidget.formatDistance(alert.meters, units), x, 119, 17, INK, true);
         canvas.restore();
     }
 
