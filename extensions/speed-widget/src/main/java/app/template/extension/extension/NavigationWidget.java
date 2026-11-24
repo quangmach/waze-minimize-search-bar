@@ -4,6 +4,7 @@ import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.os.SystemClock;
+import android.text.Html;
 import android.util.Log;
 import android.widget.RemoteViews;
 
@@ -35,8 +36,8 @@ public final class NavigationWidget extends SpeedWidget {
     private static int instruction;
     private static int exitNumber;
     private static String turnDistance = "";
-    private static String nextStreet = "";
-    private static String currentStreet = "";
+    private static volatile String maneuverStreet = "";
+    private static volatile String currentStreet = "";
     private static volatile List<Alert> alerts = Collections.emptyList();
     private static volatile long alertTime;
 
@@ -54,7 +55,7 @@ public final class NavigationWidget extends SpeedWidget {
             instruction = 0;
             exitNumber = 0;
             turnDistance = "";
-            nextStreet = "";
+            maneuverStreet = "";
             alerts = Collections.emptyList();
         }
     }
@@ -62,8 +63,21 @@ public final class NavigationWidget extends SpeedWidget {
     public static void routeCleared() { routeState(false); }
     public static void turn(int value) { instruction = value; }
     public static void exit(int value) { exitNumber = value; }
-    public static void street(String name) { nextStreet = name == null ? "" : name.trim(); }
     public static void currentStreet(String name) { currentStreet = name == null ? "" : name.trim(); }
+
+    public static void maneuverStreet(String name, String sign, String secondary, String primary) {
+        for (String candidate : new String[]{name, sign, secondary, primary}) {
+            if (candidate == null || candidate.isEmpty()) continue;
+            String label = Html.fromHtml(candidate, Html.FROM_HTML_MODE_COMPACT).toString()
+                    .replaceAll("[\\s\\p{Z}]+", " ").trim();
+            String word = label.toLowerCase(Locale.ROOT).replaceAll("[\\p{P}]+$", "").trim();
+            if (!word.isEmpty() && !word.equals("then") && !word.equals("next") && !word.equals("sau đó")) {
+                maneuverStreet = label;
+                return;
+            }
+        }
+        maneuverStreet = "";
+    }
 
     public static void distance(String value, String unit) {
         turnDistance = (value + " " + unit).trim();
@@ -146,10 +160,9 @@ public final class NavigationWidget extends SpeedWidget {
                 if (selected.size() == 4) break;
             }
         }
-        boolean showGuidance = showRoadData;
-        int turn = showGuidance && navigating ? instruction : 0;
+        int turn = showRoadData && navigating ? instruction : 0;
         String distance = turn > 0 ? turnDistance : "";
-        String street = turn > 0 ? nextStreet : showGuidance && !navigating ? currentStreet : "";
+        String street = showRoadData ? (navigating ? maneuverStreet : currentStreet) : "";
         int exit = turn >= 6 && turn <= 15 ? exitNumber : 0;
         maybeSpeak(context, selected, now, units);
         String key = speed + "|" + units + "|" + limit + "|" + status + "|" + usSign + "|" + turn

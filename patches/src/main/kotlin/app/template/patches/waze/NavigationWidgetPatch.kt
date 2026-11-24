@@ -13,8 +13,11 @@ private const val NAV_MANAGER = "Lcom/waze/navigate/NavigationInfoNativeManager;
 private const val ALERTER = "Lcom/waze/alerters/AlerterNativeManager;"
 private const val ALERT_UPDATE = "Lcom/waze/jni/protos/alerters/NativeAlertRepositoryUpdate;"
 private const val DISTANCE = "Lcom/waze/jni/protos/navigate/DistanceUpdate;"
-private const val NEXT_STREET = "Lcom/waze/jni/protos/navigate/NextStreetNameUpdate;"
-private const val CURRENT_STREET = "Lcom/waze/jni/protos/navigate/CurrentStreetNameUpdate;"
+private const val MANEUVER_STREET = "Lcom/waze/jni/protos/navigate/CurrentStreetNameUpdate;"
+private const val ROAD_SIGN = "Lcom/waze/jni/protos/navigate/NavigationRoadSign;"
+private const val LOCATION_MANAGER = "Lcom/waze/location/LocationNativeManager;"
+private const val PROVIDER_POSITION = "Lcom/waze/jni/protos/location/ProviderPosition;"
+private const val MATCHED_POSITION = "Lcom/waze/jni/protos/location/MatchedPositionProto;"
 
 private val navigationWidgetResources = patch {
     execute {
@@ -55,15 +58,27 @@ val navigationWidgetPatch = patch(
                 move-result-object v1
                 invoke-static {v0, v1}, $NAV_WIDGET->distance(Ljava/lang/String;Ljava/lang/String;)V
             """)
-        navigation.methods.single { it.name == "B" && it.parameterTypes == listOf(NEXT_STREET) }
+        // Waze calls the immediate instruction "current" and the later "then" instruction "next".
+        navigation.methods.single { it.name == "L" && it.parameterTypes == listOf(MANEUVER_STREET) }
             .addInstructions(0, """
-                invoke-virtual {p1}, $NEXT_STREET->getStreetName()Ljava/lang/String;
+                invoke-virtual {p1}, $MANEUVER_STREET->getStreetName()Ljava/lang/String;
                 move-result-object v0
-                invoke-static {v0}, $NAV_WIDGET->street(Ljava/lang/String;)V
+                invoke-virtual {p1}, $MANEUVER_STREET->getRoadSign()$ROAD_SIGN
+                move-result-object v4
+                invoke-virtual {v4}, $ROAD_SIGN->getTextRepresentation()Ljava/lang/String;
+                move-result-object v1
+                invoke-virtual {v4}, $ROAD_SIGN->getSecondaryMarkup()Ljava/lang/String;
+                move-result-object v2
+                invoke-virtual {v4}, $ROAD_SIGN->getPrimaryMarkup()Ljava/lang/String;
+                move-result-object v3
+                invoke-static {v0, v1, v2, v3}, $NAV_WIDGET->maneuverStreet(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
             """)
-        navigation.methods.single { it.name == "L" && it.parameterTypes == listOf(CURRENT_STREET) }
+        mutableClassDefBy(LOCATION_MANAGER).methods
+            .single { it.name == "d" && it.parameterTypes == listOf(PROVIDER_POSITION) }
             .addInstructions(0, """
-                invoke-virtual {p1}, $CURRENT_STREET->getStreetName()Ljava/lang/String;
+                invoke-virtual {p1}, $PROVIDER_POSITION->getMatcherInfo()$MATCHED_POSITION
+                move-result-object v0
+                invoke-virtual {v0}, $MATCHED_POSITION->getStreetName()Ljava/lang/String;
                 move-result-object v0
                 invoke-static {v0}, $NAV_WIDGET->currentStreet(Ljava/lang/String;)V
             """)
