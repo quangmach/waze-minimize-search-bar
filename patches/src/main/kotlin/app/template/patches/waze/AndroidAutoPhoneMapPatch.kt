@@ -24,6 +24,11 @@ private const val CONNECTION = "Lcom/b/b/a/u;"
 private const val EXTENSION = "Lapp/template/extension/extension/AndroidAutoPhoneMap;"
 private const val DESTINATION_ACTIVITY = "app.template.extension.extension.SharedDestinationActivity"
 private const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
+private const val CAMERA = "Lcom/waze/map/ew;"
+private const val RECT = "Landroid/graphics/Rect;"
+private const val MAP_BOUNDS_BUILDER = "Lcom/waze/jni/protos/map/MapBounds\$Builder;"
+private const val POSITION_PERCENTAGE = "Lcom/waze/jni/protos/map/MapBounds\$PositionPercentage;"
+private const val POSITION_BUILDER = "Lcom/waze/jni/protos/map/MapBounds\$PositionPercentage\$Builder;"
 
 private object DestinationDisplayTracker : Fingerprint(
     definingClass = "Lcom/waze/MainActivity;",
@@ -31,6 +36,33 @@ private object DestinationDisplayTracker : Fingerprint(
     parameters = emptyList(),
     returnType = "V",
 )
+
+private object CameraViewport : Fingerprint(
+    definingClass = CAMERA, name = "u", parameters = listOf(MAP_BOUNDS_BUILDER, RECT, RECT), returnType = "V",
+)
+
+private object CameraPosition : Fingerprint(
+    definingClass = CAMERA, name = "y", parameters = listOf("Lcom/waze/design_components/g/b;", RECT, "I"),
+    returnType = POSITION_PERCENTAGE,
+)
+
+private fun centerLandscapeCamera() {
+    CameraViewport.method.addInstructions(0, """
+        invoke-static {p2, p3}, $EXTENSION->landscapeViewport($RECT$RECT)$RECT
+        move-result-object p3
+    """)
+    val position = CameraPosition.method
+    val setter = position.implementation!!.instructions.withIndex().single { (_, instruction) ->
+        val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
+        reference?.definingClass == POSITION_BUILDER && reference.name == "setYPercentage" &&
+            reference.parameterTypes.map { it.toString() } == listOf("F")
+    }
+    val y = "v${(setter.value as Instruction35c).registerD}"
+    position.addInstructions(setter.index, """
+        invoke-static {$y}, $EXTENSION->landscapeAnchorY(F)F
+        move-result $y
+    """)
+}
 
 private fun Node.elements(tag: String): List<Element> = (0 until childNodes.length)
     .mapNotNull { childNodes.item(it) as? Element }
@@ -156,7 +188,7 @@ private fun MutableMethod.gateDestinationConnection(expectedCalls: Int) {
 @Suppress("unused")
 val androidAutoPhoneMapPatch = patch(
     name = "Remove Car mode when Waze inactive on Android Auto",
-    description = "Keep the phone map available while Waze is off the Android Auto screen and open shared destinations on Waze’s current display.",
+    description = "Keep the phone map available while Waze is off the Android Auto screen, open shared destinations on Waze’s current display, and center the landscape phone map.",
     default = false,
 ) {
     compatibleWith(Compatibility(name = "Waze", packageName = "com.waze", targets = listOf(
@@ -166,6 +198,7 @@ val androidAutoPhoneMapPatch = patch(
     dependsOn(sharedDestinationManifest)
 
     execute {
+        centerLandscapeCamera()
         val session = CarSessionEvent.method
         DestinationDisplayTracker.method.addInstructions(0, """
             invoke-static {p0}, L${DESTINATION_ACTIVITY.replace('.', '/')};->trackDisplay(Landroid/app/Activity;)V

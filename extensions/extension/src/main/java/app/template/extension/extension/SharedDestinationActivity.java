@@ -14,10 +14,15 @@ import java.lang.ref.WeakReference;
 public final class SharedDestinationActivity extends Activity {
     private static final String TAG = "QM-WazeDestination";
     private static final String WAZE_ENTRY = "com.waze.FreeMapAppActivity";
-    private static WeakReference<Activity> runningMap = new WeakReference<>(null);
+    private static volatile WeakReference<Activity> runningMap = new WeakReference<>(null);
 
     public static void trackDisplay(Activity mapActivity) {
         runningMap = new WeakReference<>(mapActivity);
+    }
+
+    static Activity currentMapActivity() {
+        Activity activity = runningMap.get();
+        return activity == null || activity.isFinishing() || activity.isDestroyed() ? null : activity;
     }
 
     @Override
@@ -64,8 +69,8 @@ public final class SharedDestinationActivity extends Activity {
 
     @SuppressWarnings("deprecation")
     private static int currentWazeDisplay() {
-        Activity activity = runningMap.get();
-        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return Display.INVALID_DISPLAY;
+        Activity activity = currentMapActivity();
+        if (activity == null) return Display.INVALID_DISPLAY;
 
         // Query the activity's current display so moves and display removal are picked up.
         Display display = Build.VERSION.SDK_INT >= 30

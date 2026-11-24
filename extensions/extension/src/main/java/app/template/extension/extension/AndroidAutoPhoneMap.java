@@ -1,5 +1,8 @@
 package app.template.extension.extension;
 
+import android.app.Activity;
+import android.content.res.Configuration;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.util.Log;
 
@@ -10,6 +13,7 @@ public final class AndroidAutoPhoneMap {
     private static final String TAG = "QM-CarPhoneUi";
     private static final String MAIN_SESSION = "com.waze.car_lib.v";
     private static final String PROJECTION = "com.waze.ak";
+    private static final float LANDSCAPE_ANCHOR_Y = 0.72f;
 
     private static Object visibleSession;
     private static volatile boolean carScreenVisible;
@@ -24,6 +28,31 @@ public final class AndroidAutoPhoneMap {
 
     public static boolean keepDestinationOnPhone() {
         return projectionConnected && !carScreenVisible;
+    }
+
+    private static boolean centerLandscapeMap() {
+        Activity activity = SharedDestinationActivity.currentMapActivity();
+        return !carScreenVisible && activity != null
+                && activity.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+    }
+
+    public static Rect landscapeViewport(Rect map, Rect viewport) {
+        if (map == null || map.isEmpty() || map.width() <= map.height()
+                || viewport == null || viewport.isEmpty() || !centerLandscapeMap()) {
+            return viewport;
+        }
+        int top = Math.max(map.top, viewport.top);
+        int bottom = Math.min(map.bottom, viewport.bottom);
+        if (top >= bottom) return viewport;
+        if (viewport.left == map.left && viewport.right == map.right
+                && viewport.top == top && viewport.bottom == bottom) {
+            return viewport;
+        }
+        return new Rect(map.left, top, map.right, bottom);
+    }
+
+    public static float landscapeAnchorY(float originalY) {
+        return centerLandscapeMap() ? Math.min(originalY, LANDSCAPE_ANCHOR_Y) : originalY;
     }
 
     public static boolean routeDestinationToCar(boolean carConnected) {
