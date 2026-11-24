@@ -11,13 +11,13 @@ import android.text.TextUtils;
 import java.util.List;
 
 final class NavigationWidgetPanel {
-    private static final int INK = 0xffedf5fa;
-    private static final int MUTED = 0xffabbccc;
-    private static final int ACCENT = 0xff80dccd;
+    private static final int INK = 0xffffffff;
+    private static final int MUTED = 0xffaeb4ba;
+    private static final int ACCENT = 0xff46c9ee;
     private static final int WIDTH = 700;
-    private static final int HEIGHT = 154;
-    private static final int GUIDANCE_WIDTH = 250;
-    private static final int SPEED_WIDTH = 194;
+    private static final int HEIGHT = 170;
+    private static final int GUIDANCE_WIDTH = 280;
+    private static final int SPEED_WIDTH = 270;
 
     private final Canvas canvas;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -33,19 +33,21 @@ final class NavigationWidgetPanel {
         NavigationWidgetPanel panel = new NavigationWidgetPanel(canvas);
         int guidanceWidth = GUIDANCE_WIDTH;
         int speedEnd = guidanceWidth + SPEED_WIDTH;
-        // Keep every section in the same place, even when its data is unavailable.
-        panel.box(0, 0, WIDTH, HEIGHT, 24, 0xf218293b);
-        panel.box(8, 8, 247, 146, 18, 0xff203950);
+        // The transparent inset prevents launcher clipping from flattening the corners.
+        panel.outlinedBox(5, 5, WIDTH - 5, HEIGHT - 5, 46, 0xbf0e0e14, 0xff364258);
+        panel.box(guidanceWidth - 1, 47, guidanceWidth + 1, 123, 0, 0x80ffffff);
+        panel.box(speedEnd - 1, 47, speedEnd + 1, 123, 0, 0x80ffffff);
         panel.maneuver(turn, exit, distance, street);
-        panel.text(speed, guidanceWidth + 54, 86, speed.length() > 2 ? 46 : 55, INK, true);
-        panel.text(units, guidanceWidth + 54, 118, 20, MUTED, false);
-        panel.speedSign(guidanceWidth + 142, 76, 37, limit, usSign);
+        panel.text(speed, guidanceWidth + 66, 89, speed.length() > 2 ? 50 : 58, INK, true);
+        panel.text(units, guidanceWidth + 66, 124, 20, MUTED, false);
+        panel.speedSign(guidanceWidth + 185, 85, 43, limit, usSign);
 
         if (!alerts.isEmpty()) {
-            panel.box(speedEnd - 2, 20, speedEnd, 134, 1, 0xff456078);
             for (int index = 0; index < alerts.size(); index++) {
                 NavigationWidget.Alert alert = alerts.get(index);
-                panel.alert(alert, speedEnd + 10 + 59 * (index + .5f), units);
+                float cellWidth = 135f / alerts.size();
+                panel.alert(alert, speedEnd + 5 + cellWidth * (index + .5f), units,
+                        Math.min(1f, cellWidth / 55f));
             }
         }
         return bitmap;
@@ -53,7 +55,7 @@ final class NavigationWidgetPanel {
 
     private void maneuver(int turn, int exit, String distance, String street) {
         if (turn <= 0) {
-            fitText(street, 128, 85, 27, 210, INK, true);
+            fitText(street, 140, 94, 27, 220, INK, true);
             return;
         }
         String arrow;
@@ -67,13 +69,13 @@ final class NavigationWidgetPanel {
             case "Destination": arrow = "⚑"; break;
             default: arrow = "↑"; break;
         }
-        text(arrow, 53, 92, 61, ACCENT, true);
+        text(arrow, 58, 100, 65, INK, true);
         if (exit > 0) {
             box(35, 96, 72, 124, 8, 0xff16283a);
             text(Integer.toString(exit), 54, 117, 20, ACCENT, true);
         }
-        fitText(distance.isEmpty() ? direction(turn) : distance, 158, street.isEmpty() ? 85 : 69, 29, 151, INK, true);
-        if (!street.isEmpty()) fitText(street, 158, 107, 20, 151, MUTED, false);
+        fitText(distance.isEmpty() ? direction(turn) : distance, 171, street.isEmpty() ? 94 : 78, 29, 160, INK, true);
+        if (!street.isEmpty()) fitText(street, 171, 113, 20, 160, ACCENT, false);
     }
 
     static String direction(int turn) {
@@ -88,7 +90,9 @@ final class NavigationWidgetPanel {
         }
     }
 
-    private void alert(NavigationWidget.Alert alert, float x, String units) {
+    private void alert(NavigationWidget.Alert alert, float x, String units, float scale) {
+        canvas.save();
+        canvas.scale(scale, scale, x, 85);
         if (alert.limit > 0) {
             speedSign(x, 63, 21, Integer.toString(alert.limit), false);
         } else {
@@ -109,6 +113,7 @@ final class NavigationWidgetPanel {
             }
         }
         text(NavigationWidget.formatDistance(alert.meters, units), x, 113, 17, INK, true);
+        canvas.restore();
     }
 
     private void speedSign(float x, float y, float radius, String value, boolean usSign) {
@@ -119,10 +124,11 @@ final class NavigationWidgetPanel {
             text("LIMIT", x, y - radius * .3f, radius * .29f, 0xff162537, true);
             text(value, x, y + radius * .53f, radius * .76f, 0xff162537, true);
         } else {
-            circle(x, y, radius, value.equals("—") ? 0xff6b7f91 : 0xffe4555f);
-            circle(x, y, radius * .81f, Color.WHITE);
+            boolean unknown = value.equals("—") || value.equals("-") || value.isEmpty();
+            circle(x, y, radius, unknown ? 0xffb0b0b0 : 0xffff0000);
+            circle(x, y, radius * .89f, unknown ? 0xffededed : Color.WHITE);
             text(value, x, y + radius * .33f, radius * (value.length() > 2 ? .86f : 1.03f),
-                    0xff162537, true);
+                    unknown ? 0xff6e7479 : Color.BLACK, true);
         }
     }
 
@@ -149,5 +155,15 @@ final class NavigationWidgetPanel {
     private void box(float left, float top, float right, float bottom, float radius, int color) {
         paint.setColor(color);
         canvas.drawRoundRect(new RectF(left, top, right, bottom), radius, radius, paint);
+    }
+
+    private void outlinedBox(float left, float top, float right, float bottom, float radius,
+                             int fill, int stroke) {
+        paint.setStyle(Paint.Style.FILL);
+        box(left, top, right, bottom, radius, fill);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(2);
+        box(left + 1, top + 1, right - 1, bottom - 1, radius - 1, stroke);
+        paint.setStyle(Paint.Style.FILL);
     }
 }
